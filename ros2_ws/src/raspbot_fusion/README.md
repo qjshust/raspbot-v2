@@ -1,25 +1,50 @@
-# raspbot_fusion —— WP-E 融合与里程计（/cmd_vel_safe + /odom + TF）
+# raspbot_fusion —— WP-E 融合与里程计（C++ 重写版）
 
 > 契约：CONTRACTS.md v1.2 §2/§3/§4。本包与 `raspbot_description`（URDF/静态 TF）
 > 同属 WP-E，本包负责动态部分：`/cmd_vel_safe`、`/odom`、`odom→base_link` TF、
 > `/odometry/filtered`。
+>
+> **v0.2.0（C++ 重写）**：原 Python 实现已归档到
+> `E:\code\raspberrypi\legacy_python\raspbot_fusion\`；`tests/test_limiter.py`
+> （33 用例）作为语义回归资产保留（字节不变），C++ 侧由
+> `tests/test_limiter.cpp`（gtest，33 用例 1:1 映射）执行。
 
 ## 1. 节点 / 发布 / 订阅
 
 | 节点 | 包 | 发布 | 订阅 | 频率 |
 |---|---|---|---|---|
 | ekf_node | robot_localization（参数本包维护） | `/odom`（remap 自 odometry/filtered）、`odom→base_link` TF | `/odom_raw`（odom0）、`/imu/data`（imu0） | 30 Hz |
-| cmd_vel_limiter | raspbot_fusion | `/cmd_vel_safe`（Twist, Reliable） | `/cmd_vel`（Reliable, depth 10）、`/estop`（Bool, Reliable, depth 1）、`/imu/data`（SensorData，仅取 header.stamp） | 30 Hz |
-| odom_relay | raspbot_fusion | `/odometry/filtered`（原样转发） | `/odom` | 30 Hz（跟随 ekf） |
+| cmd_vel_limiter | raspbot_fusion（C++） | `/cmd_vel_safe`（Twist, Reliable） | `/cmd_vel`（Reliable, depth 10）、`/estop`（Bool, Reliable, depth 1）、`/imu/data`（SensorData，仅取 header.stamp） | 30 Hz |
+| odom_relay | raspbot_fusion（C++） | `/odometry/filtered`（原样转发） | `/odom` | 30 Hz（跟随 ekf） |
 
 - `/cmd_vel_safe`、`/odom`、`/odometry/filtered` 的**唯一发布者**均在本包（SW-C04）。
 - `odom→base_link` TF 唯一 authority 是 ekf_node（SW-C05）。
+- ekf_node 的 diagnostics 发布器重映射到 `ekf/diagnostics`（launch 内
+  `remappings=[('diagnostics', 'ekf/diagnostics')]`，规避与 H 聚合节点的
+  单发布者冲突；`print_diagnostics: false` 只停止发布、不撤销 r_l 内部的
+  发布器注册）。
 - 前置：`raspbot_description` 的 robot_state_publisher 已在运行（ekf_node 需要
   `base_link→imu_link` TF 才能消费 `/imu/data`）。
 
-## 2. 参数
+## 2. 代码结构
 
-### 2.1 config/limiter.yaml（节点 cmd_vel_limiter）
+```
+include/raspbot_fusion/limiter.hpp   纯逻辑限速器接口（无 ROS 依赖）
+src/limiter.cpp                      实现（纯标准库）
+src/cmd_vel_limiter.cpp              节点 cmd_vel_limiter（rclcpp）
+src/odom_relay.cpp                   节点 odom_relay（rclcpp）
+tests/test_limiter.cpp               gtest 33 用例（与 test_limiter.py 1:1）
+tests/test_limiter.py                Python 回归资产（字节不变，不参与构建）
+config/{ekf.yaml,limiter.yaml}       参数（原样 install 到 share/）
+launch/fusion.launch.py              启动（原样 install 到 share/）
+```
+
+构建目标：库 `raspbot_fusion_lib`（limiter 纯函数）、可执行 `cmd_vel_limiter`、
+`odom_relay`（名字与 Python 版一致）。
+
+## 3. 参数
+
+### 3.1 config/limiter.yaml（节点 cmd_vel_limiter）
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -33,7 +58,7 @@
 | input_timeout | 0.4 | `/cmd_vel` 静默超时（P0，见 §4） |
 | warn_interval | 2.0 | 状态转换告警限频（WARN ≤1/2 s） |
 
-### 2.2 config/ekf.yaml（节点 ekf_node）
+### 3.2 config/ekf.yaml（节点 ekf_node，robot_localization 3.10.0）
 
 关键项（`*_config` 为 12 元 = [x,y,z,roll,pitch,yaw, vx,vy,vz,vroll,vpitch,vyaw]；
 **协方差矩阵为 15 元** = [x,y,z,roll,pitch,yaw, vx,vy,vz,vroll,vpitch,vyaw, ax,ay,az]，与 r_l 3.10.0 状态向量一致）：
@@ -46,27 +71,11 @@
 | imu0 yaw 观测噪声 | 消息自带 | FR-E-03：直接使用 `/imu/data` 的 orientation 协方差（raspbot_imu/config/imu.yaml `orientation_yaw_variance`，10⁻³ 量级） |
 | odom0_queue_size / imu0_queue_size | 10 / 10 | 默认 20 → 10 |
 | odom0_sensor_timeout / imu0_sensor_timeout | 0.2 / 1.0 | 默认 1/frequency≈0.033 s 对 30 Hz odom 太紧（抖动误拒）；IMU 对齐设计 §7.4 的 1 s 掉线判定 |
-| print_diagnostics | false | 默认 true 会向 `/diagnostics` 发布；契约规定其唯一发布者是 H（SW-C04） |
+| print_diagnostics | false | 默认 true 会向 `/diagnostics` 发布；契约规定其唯一发布者是 H（SW-C04）；配合 launch 的 diagnostics remap |
 | process_noise_covariance | [0.05,0.05,1e-9,1e-9,1e-9,0.01, 0.05,0.05,1e-9,1e-9,1e-9,0.02, 0.1,0.1,0.1] | 无编码器 → 位置/速度不确定性靠过程噪声维持；yaw 项 < 位置项；2D 锁零轴给 1e-9；ax/ay/az 0.1 占位（未启用加速度观测） |
 | initial_estimate_covariance | [0.01,0.01,1e-9,1e-9,1e-9,0.01, 0.1,0.1,0.1,1e-9,1e-9,0.1, 0.1,0.1,0.1] | 启动不确定度取小值；速度 0.1 允许快速收敛；2D 锁零轴给 1e-9；ax/ay/az 0.1 占位 |
 
 完整注释见 `config/ekf.yaml`。
-
-## 3. 启动
-
-```bash
-# 1) 静态 TF（必需，先于/并行于 fusion）
-ros2 launch raspbot_description description.launch.py
-# 2) 融合栈（/odom + /cmd_vel_safe + /odometry/filtered）
-ros2 launch raspbot_fusion fusion.launch.py
-# bag 回放 / mock 联调：
-ros2 launch raspbot_description description.launch.py use_sim_time:=true
-ros2 launch raspbot_fusion fusion.launch.py use_sim_time:=true
-```
-
-离线 mock 联调（不碰真车）：用 H 的 `fake_base`（30 Hz 发 `/odom_raw`）+ `fake_imu`
-（100 Hz 发 `/imu/data`）替代 A/B，加本包两个 launch，检查
-`ros2 topic hz /odom /cmd_vel_safe /odometry/filtered`、`ros2 run tf2_tools view_frames`。
 
 ## 4. 三级停车链路（P0，J-07 / SW-F01）
 
@@ -84,26 +93,54 @@ ros2 launch raspbot_fusion fusion.launch.py use_sim_time:=true
    显式 `/estop=false` 解除（CONTRACTS §2 锁存语义）。
 
 没有第 1 级时，limiter 会把最后一条非零指令永远转发下去，A 的看门狗永不触发
-——这是本看门狗存在的安全原因（lead 补充 P0）。
+——这是本看门狗存在的安全原因。
 
 斜率限幅只作用于**正常指令目标的变化**：包括超时/急停解除后的**从零恢复加速**
 （无突跳，FR-E-04）。安全归零（超时/急停）一律瞬时。
 
-## 5. 离线测试（脱离真车）
+## 5. 构建与测试（Pi 上）
 
 ```bash
-cd ros2_ws/src/raspbot_fusion
-python3 -m pytest tests -q          # 33 项，全绿（Windows 开发机已验证）
-python3 -m py_compile raspbot_fusion/*.py launch/*.launch.py tests/test_limiter.py
+cd ~/ros2_ws
+colcon build --packages-select raspbot_fusion
+colcon test --packages-select raspbot_fusion    # gtest 33 用例
+colcon test-result --verbose
 ```
 
-覆盖：阶跃限幅（解析断言）、幅值夹紧、estop 锁存/解除、IMU 掉线降级与恢复、
-**输入超时看门狗**、dt 异常保护（SW-U02 精神）、非法参数拒绝。
-`raspbot_fusion/limiter.py` 为纯逻辑（不 import rclpy/sensor_msgs），可直接离线跑。
+脱离真车的运行验证（mock 联调，不碰硬件）：
 
-URDF 检查：`python3 raspbot_description/tools/check_urdf.py`。
+```bash
+ros2 launch raspbot_description description.launch.py
+ros2 launch raspbot_fusion fusion.launch.py
+ros2 topic hz /odom /cmd_vel_safe /odometry/filtered
+ros2 run tf2_tools view_frames
+```
 
-## 6. 已知限制
+无 `/imu/data` 与 `/cmd_vel` 输入时，cmd_vel_limiter 应 30 Hz 持续发布零速
+`/cmd_vel_safe`，并输出「IMU 掉线」「输入指令超时」两条限频 WARN（掉线降级路径
+的正常行为）；用 fake_base/fake_imu 喂数据则无告警。
+
+## 6. 语义差异说明（C++ vs 归档 Python 版）
+
+接口类型映射（**语义等价**，gtest 已按同一容差逐条复刻）：
+
+| Python | C++ | 说明 |
+|---|---|---|
+| `imu_age=None` / `input_age=None`（从未收到） | `kNever` = NaN | `imu_stale(NaN)`/`input_stale(NaN)` 返回 true，与 None 一致 |
+| 非数值字符串 `'x'` | 无对应 | C++ 强类型接口不存在该场景；NaN 覆盖其全部行为路径（构造校验 / dt 保护 / 新鲜度判定） |
+| 构造参数 `None`/`'x'` | NaN / 编译期拒绝 | 构造校验统一抛 `std::invalid_argument`（对应 ValueError） |
+| `ValueError` | `std::invalid_argument` | 非法参数拒绝语义一致（SW-U15 精神） |
+| `rclpy.time.Time.from_msg(..., clock_type=节点时钟)` | `rclcpp::Time(msg.header.stamp, this->now().get_clock_type())` | 时间戳统一为节点时钟类型后再相减 |
+| `time.monotonic()`（dt/input_age） | `std::chrono::steady_clock` | 均不受系统时间跳变影响 |
+
+限幅语义（**完全一致**，无行为差异）：
+- 处理顺序：estop 锁存（恒零）→ 输入超时（瞬时归零）→ 斜率限幅 → 幅值夹紧；
+- dt 保护：`!(0 < dt ≤ 0.5)`（含 NaN）→ 按 0 处理，dt=0.5 恰好合法；
+- 目标数值防护：NaN/inf → 0（安全方向）；
+- estop 锁存期间与输入超时期间内部状态清零，解除/恢复后从零平滑加速；
+- IMU 掉线 → 线性幅值钳制 `degraded_max_linear`，角速度上限不变。
+
+## 7. 已知限制
 
 - **无编码器**：`/odom` 的平移仍来自 `/odom_raw` 的指令速度积分（会包含打滑/地面
   误差），EKF 只把 `/imu/data` 的 **yaw 与 yaw 速率**当观测——即**只有航向被 IMU

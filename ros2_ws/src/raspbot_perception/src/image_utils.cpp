@@ -1,0 +1,152 @@
+#include "raspbot_perception/image_utils.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <stdexcept>
+
+namespace raspbot_perception {
+
+void yuyv_to_rgb(const uint8_t* yuyv, int w, int h, uint8_t* rgb_out) {
+  if (w % 2 != 0) {
+    throw std::invalid_argument("YUYV 宽度必须为偶数，实际 " + std::to_string(w));
+  }
+  // BT.601 limited range 定点公式（等价 OpenCV）：像素对 [Y0 U Y1 V]。
+  for (int y = 0; y < h; ++y) {
+    const uint8_t* row = yuyv + static_cast<size_t>(y) * w * 2;
+    uint8_t* out = rgb_out + static_cast<size_t>(y) * w * 3;
+    for (int x = 0; x < w; x += 2) {
+      const int y0 = row[x * 2];
+      const int u = row[x * 2 + 1];
+      const int y1 = row[x * 2 + 2];
+      const int v = row[x * 2 + 3];
+      const int c0 = y0 - 16;
+      const int c1 = y1 - 16;
+      const int d = u - 128;
+      const int e = v - 128;
+      auto clamp255 = [](int v) {
+        return static_cast<uint8_t>(std::clamp(v, 0, 255));
+      };
+      out[x * 3 + 0] = clamp255((298 * c0 + 409 * e + 128) >> 8);
+      out[x * 3 + 1] = clamp255((298 * c0 - 100 * d - 208 * e + 128) >> 8);
+      out[x * 3 + 2] = clamp255((298 * c0 + 516 * d + 128) >> 8);
+      out[x * 3 + 3] = clamp255((298 * c1 + 409 * e + 128) >> 8);
+      out[x * 3 + 4] = clamp255((298 * c1 - 100 * d - 208 * e + 128) >> 8);
+      out[x * 3 + 5] = clamp255((298 * c1 + 516 * d + 128) >> 8);
+    }
+  }
+}
+
+namespace {
+// 5x7 点阵字体：0-9、a-z、'.'、'-'、' '；A-Z 映射为小写。
+struct Glyph {
+  uint8_t rows[7];
+};
+
+constexpr Glyph kDigits[10] = {
+    {{0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}},  // 0
+    {{0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},  // 1
+    {{0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}},  // 2
+    {{0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}},  // 3
+    {{0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}},  // 4
+    {{0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}},  // 5
+    {{0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}},  // 6
+    {{0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},  // 7
+    {{0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}},  // 8
+    {{0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}},  // 9
+};
+
+constexpr Glyph kLower[26] = {
+    {{0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F}},  // a
+    {{0x10, 0x10, 0x16, 0x19, 0x11, 0x11, 0x1E}},  // b
+    {{0x00, 0x00, 0x0E, 0x10, 0x10, 0x11, 0x0E}},  // c
+    {{0x01, 0x01, 0x0D, 0x13, 0x11, 0x11, 0x0F}},  // d
+    {{0x00, 0x00, 0x0E, 0x11, 0x1F, 0x10, 0x0E}},  // e
+    {{0x06, 0x09, 0x08, 0x1C, 0x08, 0x08, 0x08}},  // f
+    {{0x00, 0x0F, 0x11, 0x11, 0x0F, 0x01, 0x0E}},  // g
+    {{0x10, 0x10, 0x16, 0x19, 0x11, 0x11, 0x11}},  // h
+    {{0x04, 0x00, 0x0C, 0x04, 0x04, 0x04, 0x0E}},  // i
+    {{0x02, 0x00, 0x06, 0x02, 0x02, 0x12, 0x0C}},  // j
+    {{0x10, 0x10, 0x12, 0x14, 0x18, 0x14, 0x12}},  // k
+    {{0x0C, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},  // l
+    {{0x00, 0x00, 0x1A, 0x15, 0x15, 0x15, 0x15}},  // m
+    {{0x00, 0x00, 0x16, 0x19, 0x11, 0x11, 0x11}},  // n
+    {{0x00, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E}},  // o
+    {{0x00, 0x00, 0x1E, 0x11, 0x1E, 0x10, 0x10}},  // p
+    {{0x00, 0x00, 0x0D, 0x13, 0x0F, 0x01, 0x01}},  // q
+    {{0x00, 0x00, 0x16, 0x19, 0x10, 0x10, 0x10}},  // r
+    {{0x00, 0x00, 0x0F, 0x10, 0x0E, 0x01, 0x1E}},  // s
+    {{0x08, 0x08, 0x1C, 0x08, 0x08, 0x09, 0x06}},  // t
+    {{0x00, 0x00, 0x11, 0x11, 0x11, 0x13, 0x0D}},  // u
+    {{0x00, 0x00, 0x11, 0x11, 0x11, 0x0A, 0x04}},  // v
+    {{0x00, 0x00, 0x11, 0x15, 0x15, 0x15, 0x0A}},  // w
+    {{0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11}},  // x
+    {{0x00, 0x00, 0x11, 0x11, 0x0F, 0x01, 0x0E}},  // y
+    {{0x00, 0x00, 0x1F, 0x02, 0x04, 0x08, 0x1F}},  // z
+};
+
+constexpr Glyph kDot = {{0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C}};
+constexpr Glyph kMinus = {{0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00}};
+constexpr Glyph kSpace = {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+
+const Glyph* glyph_for(char c) {
+  if (c >= '0' && c <= '9') return &kDigits[c - '0'];
+  if (c >= 'a' && c <= 'z') return &kLower[c - 'a'];
+  if (c >= 'A' && c <= 'Z') return &kLower[c - 'A'];
+  if (c == '.') return &kDot;
+  if (c == '-') return &kMinus;
+  return &kSpace;
+}
+}  // namespace
+
+void draw_detection(uint8_t* bgr, int w, int h, int x1, int y1, int x2, int y2,
+                    const std::string& label) {
+  if (w <= 0 || h <= 0) {
+    return;
+  }
+  // BGR 绿色
+  const uint8_t b = 0, g = 255, r = 0;
+  x1 = std::clamp(x1, 0, w - 1);
+  y1 = std::clamp(y1, 0, h - 1);
+  x2 = std::clamp(x2, 0, w - 1);
+  y2 = std::clamp(y2, 0, h - 1);
+  auto set_px = [&](int px, int py) {
+    if (px < 0 || px >= w || py < 0 || py >= h) return;
+    uint8_t* p = bgr + (static_cast<size_t>(py) * w + px) * 3;
+    p[0] = b;
+    p[1] = g;
+    p[2] = r;
+  };
+  if (x2 > x1 + 1 && y2 > y1 + 1) {
+    // 线宽 2 矩形框
+    for (int t = 0; t < 2; ++t) {
+      for (int px = x1; px <= x2; ++px) {
+        set_px(px, y1 + t);
+        set_px(px, y2 - t);
+      }
+      for (int py = y1; py <= y2; ++py) {
+        set_px(x1 + t, py);
+        set_px(x2 - t, py);
+      }
+    }
+  }
+  // 标签：框上方，越界时放框内顶部
+  int ty = y1 - 9;
+  if (ty < 0) {
+    ty = y1 + 2;
+  }
+  int tx = x1 + 2;
+  for (char c : label) {
+    const Glyph* gl = glyph_for(c);
+    for (int row = 0; row < 7; ++row) {
+      for (int col = 0; col < 5; ++col) {
+        if (gl->rows[row] & (0x10 >> col)) {
+          set_px(tx + col, ty + row);
+        }
+      }
+    }
+    tx += 6;
+  }
+}
+
+}  // namespace raspbot_perception

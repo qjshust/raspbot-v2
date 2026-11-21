@@ -42,7 +42,9 @@ class SWF01(Node):
     def spin_until(self, seconds):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline and rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.05)
+            # 紧凑 spin：0.05s 超时的慢循环会积压回调 → 归零时刻被"看"晚
+            # （C++ 节点发布更紧凑，python 执行器取数不及导致测量伪影）
+            rclpy.spin_once(self, timeout_sec=0.001)
 
 
 def main():

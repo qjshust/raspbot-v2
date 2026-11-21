@@ -1,31 +1,29 @@
-# raspbot_safety — 平台安全监控与 /diagnostics 聚合（FR-H-03）
+# raspbot_safety — 平台安全监控与 /diagnostics 聚合（FR-H-03，C++ 版）
 
-`safety_node` 以 1 Hz 发布 `/diagnostics`（Reliable），内容 = 自身平台状态 +
-其他节点的诊断聚合 + 安全相关告警。对应验收用例 `SW-C11`（/diagnostics 1 Hz、
-含 CPU、温度、心跳等）与 `SYS-S04`（雷达/IMU 掉线可见性）。
+`safety_node` 以 1 Hz 发布 `/diagnostics`（Reliable，唯一发布者），内容 = 自身平台
+状态 + 各节点诊断聚合 + 安全相关告警。对应验收用例 `SW-C11` 与 `SYS-S04`
+（雷达/IMU 掉线可见性）。本包为 C++（ament_cmake）实现，行为与归档的 Python 版
+（`legacy_python/raspbot_safety/`）一致。
 
 ## 发布与订阅
 
 | 方向 | 话题 | 类型 | 用途 |
 |---|---|---|---|
 | 发布 | `/diagnostics` | diagnostic_msgs/DiagnosticArray | 1 Hz 聚合诊断（唯一发布者） |
-| 订阅 | 所有 `diagnostic_msgs/DiagnosticArray` 话题（除 `/diagnostics` 自身） | 动态发现并建订阅 | 子 status 合并进 `/diagnostics`（名称加话题前缀） |
+| 订阅 | `raspbot_base/diagnostics` | DiagnosticArray | 聚合（条目名前缀 `/raspbot_base/diagnostics`） |
+| 订阅 | `twist_mux/diagnostics` | DiagnosticArray | 聚合（前缀 `/twist_mux/diagnostics`） |
+| 订阅 | `lidar_filter/diagnostics` | DiagnosticArray | 聚合（前缀 `/lidar_filter/diagnostics`） |
+| 订阅 | `ekf/diagnostics` | DiagnosticArray | 聚合（前缀 `/ekf/diagnostics`） |
 | 订阅 | `/estop` | std_msgs/Bool | 急停状态上报（Reliable, depth 1） |
 | 订阅 | `/range` | sensor_msgs/Range | 最近 1 s 窗口最小值 <0.35 m → WARN |
 | 订阅 | `/imu/data` | sensor_msgs/Imu | 失联 >1 s → WARN（FR-E-02 可见性） |
 | 订阅 | `/odom_raw` | nav_msgs/Odometry | 失联 >0.5 s → WARN |
 | 订阅 | `/scan` | sensor_msgs/LaserScan | 失联 >0.5 s → WARN（SYS-S04 可见性） |
 
-诊断条目：
-
-- `Raspbot Platform: Heartbeat`（自增心跳）
-- `Raspbot Platform: CPU`（/proc/stat 两次采样差值 + os.getloadavg 1/5/15）
-- `Raspbot Platform: Memory`（/proc/meminfo，MemAvailable 口径）
-- `Raspbot Platform: Temperature`（thermal_zone0，m°C→°C；≥80 °C → WARN，设计 §7.4）
-- `Raspbot Platform: Uptime`
-- `Raspbot Safety: E-Stop`（true → WARN "ESTOP ENGAGED"）
-- `Raspbot Safety: Proximity`（窗口最小距离 <0.35 m → WARN）
-- `Raspbot Sensors: imu/data | odom_raw | scan`（时效监控）
+诊断条目：Heartbeat / CPU（/proc/stat 差值 + getloadavg 1/5/15）/ Memory /
+Temperature（thermal_zone0，≥80 °C → WARN，设计 §7.4）/ Uptime / E-Stop /
+Proximity / imu·odom_raw·scan 时效监控。`DiagnosticStatus.level` 为 uint8
+（C++ 原生字节，对应 Python 版的 bytes 修复）。
 
 ## 参数（config/safety.yaml）
 
@@ -38,11 +36,12 @@
 | `range_window_s` | 1.0 | 距离观察窗口 (s) |
 | `imu_stale_s` | 1.0 | IMU 失联判定 (s) |
 | `odom_stale_s` / `scan_stale_s` | 0.5 | 里程计 / 雷达失联判定 (s) |
-| `topic_scan_period_s` | 5.0 | 诊断话题动态发现周期 (s) |
 
-## 启动
+## 构建与启动
 
 ```bash
+cd ~/ros2_ws && colcon build --packages-select raspbot_safety
+
 ros2 launch raspbot_safety safety.launch.py
 ros2 topic echo /diagnostics --once
 
@@ -51,27 +50,26 @@ bash ros2_ws/scripts/estop.sh          # 发布 /estop true（锁停）
 bash ros2_ws/scripts/estop_release.sh  # 发布 /estop false（恢复）
 ```
 
-## 离线测试
+## 测试（gtest）
 
 ```bash
-cd ros2_ws/src/raspbot_safety
-python3 -m pytest tests -q     # 纯函数解析 + 阈值判断（无需 ROS）
+colcon test --packages-select raspbot_safety
+colcon test-result --verbose
+# 直接运行：
+#   ros2 run raspbot_safety test_sysinfo      （17 用例，1:1 映射 Python tests/test_sysinfo.py）
+#   ros2 run raspbot_safety test_thresholds   （8 用例，1:1 映射 Python tests/test_thresholds.py）
 ```
 
-## 已知限制
+## 与 Python 版的差异（C++ 迁移说明）
 
-- **Lyrical 诊断绑定（已适配）**：Pi 上 Lyrical 的新版 rosidl_generator_py 绑定里
-  `DiagnosticStatus.level` 是 **bytes**（`OK=b'\x00'`），字符串字段是 str。
-  发布时 convert_from_py 对 level 断言 `PyBytes_Check`、对字符串断言
-  `PyUnicode_Check`——两者反着用会直接 abort。safety_node 已按此适配
-  （`_norm_level()` 转 bytes、字符串保持 str），聚合子状态原样透传。
-  写新诊断发布代码时不要沿用旧绑定的 int level 习惯。
-- `/range` 无数据（mock 模式或传感器空闲）**不告警**，避免 SW-I04 噪声；
-  真车模式有数据且 <0.35 m 才 WARN。
-- I2C 错误计数属 WP-A（SYS-S05）：A 以任何诊断话题发布计数后会被自动聚合
-  （前缀 `<topic>: <name>`），本节点不直接读 I2C。
-- 若 Nav2/其他节点直接向 `/diagnostics` 发布（默认行为），会造成双发布者，
-  违反契约单发布者约定——需在对应 launch 中把其诊断话题 remap 到
-  `/nav2/diagnostics` 等名字后由本节点聚合（集成注意项）。
-- 纯函数不读真实 `/proc`；`safety_node` 读取失败时对应条目为 WARN 并带
-  `n/a` 值，不影响其他条目。
+- **聚合方式**：Python 版动态发现所有非 `/diagnostics` 的 DiagnosticArray 话题；
+  C++ 版按契约**静态订阅四个 remap 后的诊断话题**
+  （raspbot_base/twist_mux/lidar_filter/ekf 的 diagnostics）。新增诊断源需在此
+  package 内加订阅（对应参数 `topic_scan_period_s` 已随动态发现一起移除）。
+- `uptime_s` 值格式化从 Python `str(float)`（repr 最短表示）改为 `%.2f`，
+  仅影响显示精度。
+- `/range` 无数据（mock 模式或传感器空闲）**不告警**；真车模式有数据且
+  <0.35 m 才 WARN（与 Python 版一致）。
+- I2C 错误计数属 WP-A（SYS-S05）：A 发布诊断话题后由本节点聚合进 `/diagnostics`。
+- 任何节点直接向 `/diagnostics` 发布都会破坏单发布者约定（SW-C04），
+  新诊断源必须 remap 到专属话题名后由本节点聚合。

@@ -2,29 +2,28 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>raspbot_perception</name>
-  <version>0.1.0</version>
-  <description>RASPBOT-V2 WP-I: Hailo-8 YOLOv8 vision perception (/image_raw -&gt; /detections, /perception/image)</description>
+  <version>0.2.0</version>
+  <description>RASPBOT-V2 WP-I: Hailo-8 YOLOv8 vision perception in C++ (/image_raw -&gt; /detections, /perception/image)</description>
   <maintainer email="raspbot@example.com">RASPBOT-V2 team</maintainer>
   <license>MIT</license>
 
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>vision_msgs</exec_depend>
-  <exec_depend>std_msgs</exec_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>vision_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- launch 文件引用 launch_ros（与 raspbot_bringup 的依赖一致） -->
   <exec_depend>launch_ros</exec_depend>
-  <!-- 非 ROS 系统依赖（rosdep key） -->
-  <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-opencv</exec_depend>
 
-  <!-- hailo_platform 无法用 rosdep 声明（Pi 上源码编译安装，见 README 与
-       docs/Hailo-8_驱动安装与验证.md §5）；运行时按需 import，缺失时节点报错。 -->
+  <!-- HailoRT（hailort.hpp / libhailort.so）为系统级可选依赖，无法用 rosdep 声明：
+       Pi 实测路径 include=/usr/include、lib=/usr/lib/libhailort.so（4.23.0），
+       CMakeLists.txt 中 find_path/find_library 自动探测，缺失时跳过 hailo_node。 -->
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
-  <test_depend>python3-pytest</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
 
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

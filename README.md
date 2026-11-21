@@ -1,6 +1,6 @@
-# RASPBOT-V2 智能小车 · ROS 2 全栈
+# RASPBOT-V2 智能小车 · ROS 2 全栈（C++ 实现）
 
-基于亚博智能 RASPBOT-V2 麦轮小车的自动驾驶软件栈：树莓派 5 + ROS 2 Lyrical + 激光雷达 + HWT101 IMU + 相机 + **Hailo-8 NPU**，包含底盘驱动、IMU、传感器融合、建图定位、Nav2 导航与 YOLOv8s 视觉推理，8 个 ROS 2 包、**174 项单元测试**、完整台架自测试套件。
+基于亚博智能 RASPBOT-V2 麦轮小车的自动驾驶软件栈：树莓派 5 + ROS 2 Lyrical + 激光雷达 + HWT101 IMU + 相机 + **Hailo-8 NPU**，包含底盘驱动、IMU、传感器融合、建图定位、Nav2 导航与 YOLOv8s 视觉推理，8 个 ROS 2 包、**211 项 gtest 单元测试**、完整台架自测试套件。全部运行时节点为 **C++（rclcpp）** 实现；早期 Python 版源码归档于 `legacy_python/`，原 pytest 用例保留在各包 test(s)/ 目录（未改动）。
 
 > 文档索引：设计文档见 `docs/`，接口契约见 [`ros2_ws/CONTRACTS.md`](ros2_ws/CONTRACTS.md)，自测试报告见 `docs/自测试报告_2026-11-21.docx`。
 
@@ -55,18 +55,18 @@ base_node          └── /scan（雷达，经后向 ±165° 滤波）
 建图/导航：slam_toolbox | map_server+amcl → planner/controller → Nav2
 ```
 
-### 8 个包
+### 8 个包（全部 C++/rclcpp，ament_cmake）
 
 | 包 | 职责 |
 |---|---|
-| `raspbot_base` | 麦轮运动学/里程计/传感器解码（纯函数）+ 底盘节点（I2C、看门狗、诊断） |
+| `raspbot_base` | 麦轮运动学/里程计/传感器解码（纯函数库 `raspbot_base_lib`）+ 底盘节点（I2C ioctl、看门狗、诊断） |
 | `raspbot_imu` | 双源 IMU（HWT101/ICM-42688/mock），串口断线自动恢复，100 Hz 姿态输出 |
-| `raspbot_fusion` | EKF 配置、`cmd_vel_limiter`（限幅/急停/IMU 降级/输入超时）、`odom_relay` |
-| `raspbot_description` | URDF 与外参、robot_state_publisher（TF 静态外参唯一来源） |
-| `raspbot_bringup` | lidar/camera/slam/localization/nav2/perception 全部 launch 与参数 |
+| `raspbot_fusion` | `cmd_vel_limiter`（限幅/急停/IMU 降级/输入超时，纯函数库 `raspbot_fusion_lib`）、`odom_relay`；ekf.yaml 供 robot_localization |
+| `raspbot_description` | URDF 与外参、robot_state_publisher（TF 静态外参唯一来源，纯数据包） |
+| `raspbot_bringup` | lidar/camera/slam/localization/nav2/perception 全部 launch 与参数（纯数据包） |
 | `raspbot_mock` | fake_base / fake_imu / fake_scan（无硬件 SIL 测试） |
-| `raspbot_safety` | `/diagnostics` 聚合与安全监视 |
-| `raspbot_perception` | Hailo-8 YOLOv8s 推理节点（letterbox + NMS 后处理） |
+| `raspbot_safety` | `/diagnostics` 聚合与安全监视（纯函数库 `raspbot_safety_utils`） |
+| `raspbot_perception` | Hailo-8 YOLOv8s 推理节点（HailoRT 原生 C++ API；letterbox/NMS/classes 纯函数库 `raspbot_perception_core`） |
 
 ---
 
@@ -153,19 +153,19 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd
 
 ## 测试
 
-### 单元测试（174 项，离线可跑）
+### 单元测试（211 项 gtest，离线可跑）
 
 ```bash
 cd ros2_ws
-colcon test --python-testing pytest && colcon test-result --verbose
-# 或按包直接跑
-python3 -m pytest src/raspbot_base/test -q     # 45
-python3 -m pytest src/raspbot_imu/test -q      # 43
-python3 -m pytest src/raspbot_fusion/test -q   # 33
-python3 -m pytest src/raspbot_safety/test -q   # 25
-python3 -m pytest src/raspbot_perception/test -q  # 23
-python3 -m pytest src/raspbot_mock/test -q     # 5
+colcon build --symlink-install
+colcon test --packages-select raspbot_base raspbot_imu raspbot_fusion \
+    raspbot_safety raspbot_mock raspbot_perception
+colcon test-result --verbose   # 期望 Summary: 211 tests, 0 failures
+# 或直接跑单个二进制
+./build/raspbot_base/test_kinematics
 ```
+
+各包 gtest 用例与早期 Python 版 pytest 用例 1:1 对应（`raspbot_base` 50 / `raspbot_imu` 43 / `raspbot_fusion` 33 / `raspbot_safety` 25 / `raspbot_mock` 9 / `raspbot_perception` 31）；原 pytest 文件保留在各包 `test(s)/` 目录（未改动，可对照）。
 
 ### 台架自测试套件（`ros2_ws/tools/selftest/` 的兄弟目录 `.dsh/selftest/`）
 
@@ -179,10 +179,14 @@ bash .dsh/selftest/07_nav2_sil.sh    # SIL 导航（结尾应打印全部通过�
 bash .dsh/selftest/09_perf.sh
 ```
 
-**实测结果摘要**（悬空台架，2026-11）：174 单测全过；控制周期 p99 33.5 ms；端到端 1 ms；全栈 RSS 897 MB / CPU 66%；Hailo-8 68.6 FPS；超时停车 0.41 s、急停锁存 0.20 s；SIL 导航目标 **SUCCEEDED**。详细报告见 `docs/`。
+**实测结果摘要**（悬空台架，2026-11，C++ 版）：211 项 gtest 全过；控制周期 p99 33.5 ms；端到端 1 ms；全栈 RSS 897 MB / CPU 66%；Hailo-8 66~67 FPS；超时停车 0.40 s / 0.44 s、急停锁存 0.20 s；SIL 导航目标 **SUCCEEDED**。详细报告见 `docs/`。
 
 ## 已知限制与坑
 
+- **Lyrical 的 ament_cmake 没有 `ament_target_dependencies`**（宏已移除，`ament_cmake_target_dependencies` 包只提供递归属性）：链接 rclcpp 用 `rclcpp::rclcpp`，消息包用 `pkg::pkg__rosidl_generator_cpp`（头文件）+ `pkg::pkg__rosidl_typesupport_cpp`（类型支持符号，否则链接期 undefined reference）。
+- **gtest 1.17 参数化测试名**只允许字母数字下划线：`-1.5` 之类的参数名要写成 `neg1_5`。
+- **std::normal_distribution 的 stddev 必须 > 0**（含成员默认初始化 `{0.0, 0.0}` 会在构造时断言崩溃），噪声参数为 0 时用 `std::max(x, 1e-12)`。
+- **HailoRT 4.23 调度器模式**：core-op 调度器默认启用，禁止手动 `activate()`（返回 HAILO_INVALID_OPERATION）；NMS 输出缓冲实测需显式 `set_buffer` 注册（否则 run_async 报 "Couldnt find output buffer"）。
 - **无轮编码器**：`/odom` 为指令速度开环积分，长距离会漂移；导航定位依赖激光（amcl）修正 `map→odom`。
 - **Nav2 1.5.2 类型坑（重要）**：`controller_server`/`behavior_server`/`collision_monitor` 的 `enable_stamped_cmd_vel` 默认 `true` 会输出 `TwistStamped`，而本栈契约是 `Twist`——必须显式置 `false`，否则消息被 DDS 静默丢弃（表现为控制器有 "Publishing velocity" 但车不动）。
 - **twist_mux**：`use_stamped` 默认 `true`，需显式 `false`；且不接受空 `locks: {}` 键。
@@ -195,7 +199,8 @@ bash .dsh/selftest/09_perf.sh
 ## 仓库结构
 
 ```
-ros2_ws/            8 个 ROS 2 包 + CONTRACTS.md + tools/slam
+ros2_ws/            8 个 ROS 2 包（C++/ament_cmake）+ CONTRACTS.md + tools/slam
+legacy_python/      早期 Python 实现归档（行为参考，不再构建）
 docs/               设计文档 v2.0~v2.4、自测试报告、专题报告
 mech/               机械结构生成脚本与渲染图
 .dsh/selftest/      台架自测试套件（脚本 + 证据日志）

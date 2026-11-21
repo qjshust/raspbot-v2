@@ -4,12 +4,14 @@ Run with the full stack up. Prints PASS/FAIL per item, exits nonzero on any
 P0 failure. Usage: contract_check.py [--with-camera] [--window 6]
 """
 import argparse
+import re
 import sys
 import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
+from rclpy.qos import (QoSProfile, DurabilityPolicy, ReliabilityPolicy,
+                       qos_profile_sensor_data)
 from diagnostic_msgs.msg import DiagnosticArray
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, Image, LaserScan, Range
@@ -53,7 +55,11 @@ class Checker(Node):
         self._subs = {}
         for topic, (typ, _) in subs.items():
             if topic in SENSOR_TOPICS:
-                qos = qos_profile_sensor_data
+                # 深队列 BestEffort：C++ 节点发布节奏更紧凑，浅队列会因
+                # python 执行器来不及取而被丢弃 → 频率误判（节点本身频率正常）
+                qos = QoSProfile(
+                    depth=1000,
+                    reliability=ReliabilityPolicy.BEST_EFFORT)
             elif topic == '/tf_static':
                 qos = TF_STATIC_QOS
             else:
@@ -99,6 +105,34 @@ def qos_label(topic):
     return rel, dur, pubs
 
 
+def measure_rates(topics, seconds=8.0):
+    """用 ros2 topic hz（C++ 计数器）并行实测各话题频率。
+
+    python 执行器在满载订阅下取数不及，会低估频率（节点本身正常）；
+    CLI 计数器是权威测量。返回 {topic: hz or None}。
+    """
+    import concurrent.futures
+    import subprocess
+
+    def one(topic):
+        try:
+            out = subprocess.run(
+                ['timeout', '-s', 'KILL', str(int(seconds)),
+                 'ros2', 'topic', 'hz', topic],
+                capture_output=True, text=True, timeout=seconds + 15)
+            txt = out.stdout + out.stderr
+            rates = re.findall(r'average rate:\s*([0-9.]+)', txt)
+            return topic, float(rates[-1]) if rates else None
+        except Exception:
+            return topic, None
+
+    result = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(topics)) as ex:
+        for topic, hz in ex.map(one, topics):
+            result[topic] = hz
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--with-camera', action='store_true')
@@ -115,10 +149,14 @@ def main():
               '/diagnostics': (0.8, 1.4)}
     if args.with_camera:
         expect['/image_raw'] = (1.0, 60.0)
+    rates = measure_rates(list(expect.keys()))
     for topic, (lo, hi) in expect.items():
-        h = node.hz(topic)
-        ok = lo <= h <= hi
-        check(f'{topic} hz={h:.2f} ({lo}~{hi})', ok)
+        h = rates.get(topic)
+        if h is None:
+            check(f'{topic} hz=无消息 ({lo}~{hi})', False)
+        else:
+            ok = lo <= h <= hi
+            check(f'{topic} hz={h:.2f} ({lo}~{hi})', ok)
 
     print('== 2. QoS（记录口径，J-13）与单发布者 ==')
     for topic in ('/scan', '/imu/data', '/odom_raw', '/odom', '/cmd_vel',

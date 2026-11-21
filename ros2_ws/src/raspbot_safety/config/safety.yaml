@@ -1,4 +1,4 @@
-# raspbot_safety 默认参数
+# raspbot_safety 默认参数（C++ 版）
 # 用法：ros2 launch raspbot_safety safety.launch.py
 #      或 ros2 run raspbot_safety safety_node --ros-args --params-file <本文件>
 safety_node:
@@ -12,4 +12,3 @@ safety_node:
     imu_stale_s: 1.0          # /imu/data 失联判定（设计 §7.4：IMU 掉线 1 s）
     odom_stale_s: 0.5         # /odom_raw 失联判定
     scan_stale_s: 0.5         # /scan 失联判定（设计 §7.4：雷达掉线 0.5 s）
-    topic_scan_period_s: 5.0  # 诊断话题动态发现周期（s）
