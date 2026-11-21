@@ -1,0 +1,54 @@
+# ============================================================
+# RASPBOT-V2 仓库忽略规则（绝不提交任何凭据/私钥/大工具链）
+# ============================================================
+
+# 凭据与密钥（严禁入库）
+.ssh/
+.gitkeys/
+.dsh/github_key/
+.dsh/pi.ps1
+.dsh/askpass.cmd
+.dsh/known_hosts
+tools/_pi_usb_state.sh
+
+# 本地调试杂项（保留 .dsh/selftest 交付测试套件）
+.dsh/*
+!.dsh/selftest/
+.dsh/selftest/**/__pycache__/
+
+# 树莓派厂商工具链/子模块目录（910 MB，仅保留我方脚本镜像 ros2_ws/tools/slam）
+/tools/
+
+# ROS 2 构建产物
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+pytest-cache-files-*/
+
+# 构建/中间产物
+*.o
+*.so
+*.a
+*.bin
+*.hex
+*.elf
+
+# 数据采集（体积大，不入库）
+*.bag
+*.bag.active
+*.db3
+*.mcap
+data/
+
+# 系统与编辑器
+Thumbs.db
+.DS_Store
+*.swp
+.idea/
+.vscode/

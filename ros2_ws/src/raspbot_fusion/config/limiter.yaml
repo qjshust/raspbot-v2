@@ -1,0 +1,28 @@
+# ============================================================================
+# RASPBOT-V2 cmd_vel_limiter 参数（WP-E 唯一维护）
+# 契约：CONTRACTS.md v1.2 §2/§4 —— /cmd_vel_safe 唯一发布者 = E
+# 用法：ros2 launch raspbot_fusion fusion.launch.py
+#      或 ros2 run raspbot_fusion cmd_vel_limiter --ros-args --params-file <本文件>
+# ============================================================================
+cmd_vel_limiter:
+  ros__parameters:
+    control_rate: 30.0            # /cmd_vel_safe 发布频率（契约 30 Hz）
+
+    # ---------- 幅值与斜率 ----------
+    max_linear: 0.30              # 满速线性上限 m/s（FR-E-04：输出 ≤ max_linear）
+    max_angular: 1.5              # 满速角速度上限 rad/s
+    max_lin_accel: 0.6            # 一阶斜率限幅 m/s²（FR-E-04：阶跃无突跳）
+    max_ang_accel: 2.0            # rad/s²
+
+    # ---------- 降级（FR-E-02 / SYS-S03） ----------
+    degraded_max_linear: 0.15     # IMU 掉线时线性上限 m/s（判据要求 ≤0.5 m/s）
+    imu_timeout: 1.0              # /imu/data age > 1.0 s 视为掉线（设计 §7.4）
+
+    # ---------- 输入超时看门狗（P0，J-07/SW-F01 三级停车） ----------
+    # /cmd_vel 超过 input_timeout 未更新 → 输出瞬时归零（安全路径，不经斜率限幅），
+    # 30 Hz 持续发布零速。0.4 s < 0.5 s：J-07/SW-F01 要求从最后有效指令起算
+    # ≤0.5 s（实测判据 0.54 s）停车，留出 mux→limiter→base 两级各约 33 ms
+    # （一个 30 Hz 周期）传播时间，总链 ≈0.47 s。
+    input_timeout: 0.4
+
+    warn_interval: 2.0            # 状态转换告警限频周期（要求 WARN ≤1/2 s）

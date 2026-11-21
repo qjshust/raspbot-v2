@@ -1,0 +1,15 @@
+# raspbot_safety 默认参数
+# 用法：ros2 launch raspbot_safety safety.launch.py
+#      或 ros2 run raspbot_safety safety_node --ros-args --params-file <本文件>
+safety_node:
+  ros__parameters:
+    rate: 1.0                 # /diagnostics 发布频率（契约 1 Hz）
+    temp_warn_c: 80.0         # SoC 温度告警阈值（设计 §7.4：>80 °C 降频并告警）
+    cpu_warn_pct: 90.0        # CPU 使用率告警阈值
+    mem_warn_pct: 90.0        # 内存使用率告警阈值
+    range_warn_m: 0.35        # 最近窗口内最小距离告警阈值（m）
+    range_window_s: 1.0       # /range 观察窗口（s）
+    imu_stale_s: 1.0          # /imu/data 失联判定（设计 §7.4：IMU 掉线 1 s）
+    odom_stale_s: 0.5         # /odom_raw 失联判定
+    scan_stale_s: 0.5         # /scan 失联判定（设计 §7.4：雷达掉线 0.5 s）
+    topic_scan_period_s: 5.0  # 诊断话题动态发现周期（s）

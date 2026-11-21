@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>raspbot_bringup</name>
+  <version>0.1.0</version>
+  <description>RASPBOT-V2 bringup: launch files and configs for lidar (C), camera (D), slam/localization (F), nav2 (G), platform (H) and perception (I).</description>
+  <maintainer email="raspbot@example.com">RASPBOT-V2 team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+
+  <!-- C 雷达 -->
+  <exec_depend>rplidar_ros</exec_depend>
+  <exec_depend>laser_filters</exec_depend>
+  <!-- D 相机 -->
+  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>camera_info_manager</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <!-- E 融合 -->
+  <exec_depend>raspbot_fusion</exec_depend>
+  <exec_depend>raspbot_description</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <!-- F 建图 -->
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <!-- G 导航 -->
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
+  <!-- H 平台 -->
+  <exec_depend>raspbot_base</exec_depend>
+  <exec_depend>raspbot_imu</exec_depend>
+  <exec_depend>raspbot_mock</exec_depend>
+  <exec_depend>raspbot_safety</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
+  <!-- I 感知 -->
+  <exec_depend>raspbot_perception</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

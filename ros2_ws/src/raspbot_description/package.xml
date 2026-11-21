@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>raspbot_description</name>
+  <version>0.1.0</version>
+  <description>RASPBOT-V2 robot description (URDF) and static TF publisher (WP-E owned)</description>
+  <maintainer email="ubuntu@example.com">ubuntu</maintainer>
+  <license>MIT</license>
+
+  <!-- 运行时依赖：robot_state_publisher 读 URDF 发静态 TF；launch_ros 提供
+       launch 文件运行环境（ament_index_python 经其传递获得）。 -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

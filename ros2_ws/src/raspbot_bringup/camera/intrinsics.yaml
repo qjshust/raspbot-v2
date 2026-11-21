@@ -1,0 +1,38 @@
+# RASPBOT-V2 相机内参（占位值 —— 待 CAR-C06 棋盘格标定后替换，FR-D-02：重投影 <1 px）
+#
+# 占位说明：
+#   - K 为中心透视近似：fx=fy≈640、主点 (320,240)，畸变全 0。
+#     仅保证话题链路/契约形态可跑通，不得用于测量/定位结论。
+#   - 真实内参请用 camera/calibrate_camera.py（8×6 棋盘格、方格 25 mm）标定后
+#     覆盖本文件。
+#
+# 运行时行为（v4l2_camera 0.8.1 源码 v4l2_camera.cpp checkCameraInfo）：
+#   - camera_info_manager 发布时会把 image_width/image_height 与实发图像对齐；
+#   - 若本文件尺寸与实际 image_size 不一致，整个 CameraInfo 会被丢弃（K 清空），
+#     因此改分辨率必须同步更新本文件。
+image_width: 640
+image_height: 480
+camera_name: raspbot_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [640.0, 0.0, 320.0,
+         0.0, 640.0, 240.0,
+         0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [640.0, 0.0, 320.0, 0.0,
+         0.0, 640.0, 240.0, 0.0,
+         0.0, 0.0, 1.0, 0.0]

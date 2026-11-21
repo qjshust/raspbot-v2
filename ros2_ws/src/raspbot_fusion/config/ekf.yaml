@@ -1,0 +1,76 @@
+# ============================================================================
+# RASPBOT-V2 ekf_node（robot_localization 3.10.0）参数 —— WP-E 唯一维护
+# 契约：CONTRACTS.md v1.2 §2/§3/§4 —— /odom 与 odom→base_link TF 唯一发布者 = E
+# 用法：ros2 launch raspbot_fusion fusion.launch.py
+# 前提：raspbot_description 的 robot_state_publisher 已运行（EKF 需要
+#       base_link→imu_link 的 TF 把 /imu/data 变换到 base_link 系）。
+# 改动点（相对 ros2 生态默认值）见本文件各注释与 README「集成注意事项」。
+# ============================================================================
+ekf_node:
+  ros__parameters:
+    # ---------- 基本框架 ----------
+    frequency: 30.0                # 输出频率（契约：/odom 30 Hz）
+    two_d_mode: true               # 2D 平面车：z/roll/pitch 及相应速度锁零
+    publish_tf: true               # EKF 发布 odom→base_link（契约：仅 E 可发）
+    map_frame: map                 # map→odom 由 F 发布（本节点不消费，仅命名）
+    odom_frame: odom               # 输出 header.frame_id
+    base_link_frame: base_link     # 输出 child_frame_id / TF child
+    world_frame: odom              # 世界系 = odom（无需 map→odom 即可工作）
+    transform_time_offset: 0.0
+
+    # ---------- 诊断输出（改动点 1） ----------
+    # 默认 print_diagnostics=true 会向 /diagnostics 发布；契约规定 /diagnostics
+    # 唯一发布者是 H（safety_monitor，1 Hz）。显式关闭避免双发布者（SW-C04）。
+    print_diagnostics: false
+
+    # ---------- 传感器 0：/odom_raw（A 的指令速度开环积分） ----------
+    # 无编码器：位姿是开环积分结果，绝不能当绝对位姿观测（会把积分误差反向
+    # 注入估计，SW-C06 判据）。只用 vx/vy/vyaw 作速度观测，权重由 A 的消息
+    # 协方差决定（低权重融合，设计 §7.3）。
+    odom0: odom_raw
+    # 12 元：[x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw]
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true]
+    odom0_queue_size: 10           # 默认 20 → 10（30 Hz 下约 0.33 s 缓冲足够）
+    # 改动点 2：默认 sensor_timeout = 1/frequency ≈ 0.033 s，与 A 的 30 Hz 周期
+    # 同量级，抖动会造成偶发拒收；放宽到 0.2 s（6 个周期）。底盘崩溃 → 数据被
+    # 拒 → EKF 退化为纯 IMU 修正（设计 §3.5）。
+    odom0_sensor_timeout: 0.2
+
+    # ---------- 传感器 1：/imu/data（B 的 HWT101，单轴 Z） ----------
+    # HWT101 无加速度计/磁罗盘：roll/pitch 恒 0 且协方差 1.0（不可用），只取
+    # yaw + yaw 角速度（设计 §5.1.1/§7.3）。yaw 测量协方差来自消息本身
+    # （raspbot_imu/config/imu.yaml 的 orientation_yaw_variance，10⁻³ 量级，
+    # FR-E-03），EKF 直接使用消息协方差，无需在此重复配置。
+    imu0: imu/data
+    # 12 元：[姿态 x, y, z, roll, pitch, yaw, 角速度 x, y, z, 线加速度 x, y, z]
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true]
+    imu0_queue_size: 10
+    # 改动点 3：默认 1/frequency ≈ 0.033 s 对 100 Hz IMU 过于激进（队列稍有
+    # 堆积即拒收）；对齐设计 §7.4 的 IMU 掉线判定 1 s。
+    imu0_sensor_timeout: 1.0
+
+    # ---------- 协方差 ----------
+    # 协方差矩阵长度 = 15：robot_localization 3.10.0 的状态向量为
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    # （注意：odom0_config / imu0_config 仍是 12 元，只含位姿与速度分量）。
+    # process_noise_covariance（15 元对角）：
+    # 无编码器 → 位置/速度主要靠过程噪声维持不确定性：x/y 位置与 vx/vy 取 0.05；
+    # yaw 0.01 / vyaw 0.02（允许航向在 IMU 修正间继续漂移，数值 < 位置项）；
+    # z/roll/pitch 由 two_d_mode 锁零，取 1e-9 防数值噪声；
+    # ax/ay/az 取 0.1 仅占位：本配置不启用加速度观测（imu0_config 的
+    # linear_acceleration 位全为 false），不参与修正。
+    process_noise_covariance: [0.05, 0.05, 1e-9, 1e-9, 1e-9, 0.01,
+                               0.05, 0.05, 1e-9, 1e-9, 1e-9, 0.02,
+                               0.1, 0.1, 0.1]
+    # initial_estimate_covariance（15 元对角）：
+    # 启动时位置不确定度取小值（x/y/yaw 0.01）；速度取 0.1（真实速度未知，
+    # 允许快速收敛）；z/roll/pitch 及其速度锁零，取 1e-9；ax/ay/az 0.1 占位。
+    initial_estimate_covariance: [0.01, 0.01, 1e-9, 1e-9, 1e-9, 0.01,
+                                  0.1, 0.1, 0.1, 1e-9, 1e-9, 0.1,
+                                  0.1, 0.1, 0.1]

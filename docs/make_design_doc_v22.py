@@ -1,0 +1,1445 @@
+﻿# -*- coding: utf-8 -*-
+"""Generate the decoupled design document (v2.2: hardware + mechanical structure)."""
+
+import os
+
+from docx import Document
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Cm, Pt, RGBColor
+
+OUT = r'E:\code\raspberrypi\docs\RASPBOT-V2_智能驾驶系统设计文档_v2.2.docx'
+
+BODY_FONT = '宋体'
+HEAD_FONT = '微软雅黑'
+MONO_FONT = 'Consolas'
+
+
+def set_east_asia(style, font_name):
+    rpr = style.element.get_or_add_rPr()
+    rfonts = rpr.find(qn('w:rFonts'))
+    if rfonts is None:
+        rfonts = OxmlElement('w:rFonts')
+        rpr.append(rfonts)
+    rfonts.set(qn('w:eastAsia'), font_name)
+    rfonts.set(qn('w:ascii'), font_name)
+    rfonts.set(qn('w:hAnsi'), font_name)
+
+
+def run_east_asia(run, font_name):
+    rpr = run._r.get_or_add_rPr()
+    rfonts = rpr.find(qn('w:rFonts'))
+    if rfonts is None:
+        rfonts = OxmlElement('w:rFonts')
+        rpr.append(rfonts)
+    rfonts.set(qn('w:eastAsia'), font_name)
+
+
+def setup_styles(doc):
+    normal = doc.styles['Normal']
+    normal.font.name = BODY_FONT
+    normal.font.size = Pt(10.5)
+    set_east_asia(normal, BODY_FONT)
+    normal.paragraph_format.space_after = Pt(4)
+    normal.paragraph_format.line_spacing = 1.25
+    for name, size in (('Heading 1', 16), ('Heading 2', 13), ('Heading 3', 11.5)):
+        style = doc.styles[name]
+        style.font.name = HEAD_FONT
+        style.font.size = Pt(size)
+        style.font.bold = True
+        style.font.color.rgb = RGBColor(0x1F, 0x3B, 0x57)
+        set_east_asia(style, HEAD_FONT)
+        style.paragraph_format.space_before = Pt(12)
+        style.paragraph_format.space_after = Pt(6)
+    for name in ('List Bullet', 'List Number'):
+        style = doc.styles[name]
+        style.font.name = BODY_FONT
+        style.font.size = Pt(10.5)
+        set_east_asia(style, BODY_FONT)
+
+
+def add_page_number(paragraph):
+    run = paragraph.add_run()
+    begin = OxmlElement('w:fldChar')
+    begin.set(qn('w:fldCharType'), 'begin')
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = 'PAGE'
+    end = OxmlElement('w:fldChar')
+    end.set(qn('w:fldCharType'), 'end')
+    for node in (begin, instr, end):
+        run._r.append(node)
+    run.font.size = Pt(9)
+
+
+def add_toc(doc):
+    p = doc.add_paragraph()
+    run = p.add_run()
+    begin = OxmlElement('w:fldChar')
+    begin.set(qn('w:fldCharType'), 'begin')
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = 'TOC \\o "1-3" \\h \\z \\u'
+    sep = OxmlElement('w:fldChar')
+    sep.set(qn('w:fldCharType'), 'separate')
+    text = OxmlElement('w:t')
+    text.text = '（在 Word 中右键此处 → 更新域，生成目录）'
+    end = OxmlElement('w:fldChar')
+    end.set(qn('w:fldCharType'), 'end')
+    for node in (begin, instr, sep, text, end):
+        run._r.append(node)
+
+
+def add_table(doc, headers, rows, widths=None, font_size=9.0, header_fill='DCE6F1'):
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    for i, text in enumerate(headers):
+        cell = table.rows[0].cells[i]
+        cell.text = ''
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(str(text))
+        run.bold = True
+        run.font.size = Pt(font_size)
+        run_east_asia(run, HEAD_FONT)
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), header_fill)
+        cell._tc.get_or_add_tcPr().append(shd)
+
+    tr_pr = table.rows[0]._tr.get_or_add_trPr()
+    tbl_header = OxmlElement('w:tblHeader')
+    tbl_header.set(qn('w:val'), 'true')
+    tr_pr.append(tbl_header)
+    tr_pr.append(OxmlElement('w:cantSplit'))
+
+    for row in rows:
+        cells = table.add_row().cells
+        for i, value in enumerate(row):
+            cells[i].text = ''
+            p = cells[i].paragraphs[0]
+            run = p.add_run(str(value))
+            run.font.size = Pt(font_size)
+            run_east_asia(run, BODY_FONT)
+        table.rows[-1]._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+
+    if widths:
+        for row in table.rows:
+            for i, width in enumerate(widths):
+                row.cells[i].width = Cm(width)
+    return table
+
+
+def add_code(doc, text):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(2)
+    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.line_spacing = 1.0
+    p_pr = p._p.get_or_add_pPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:fill'), 'F4F4F4')
+    p_pr.append(shd)
+    run = p.add_run(text)
+    run.font.name = MONO_FONT
+    run.font.size = Pt(8.5)
+    run_east_asia(run, MONO_FONT)
+    return p
+
+
+def note(doc, text):
+    p = doc.add_paragraph()
+    run = p.add_run(text)
+    run.italic = True
+    run.font.size = Pt(9.5)
+    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run_east_asia(run, BODY_FONT)
+    return p
+
+
+def bullets(doc, items):
+    for item in items:
+        doc.add_paragraph(item, style='List Bullet')
+
+
+def figure(doc, filename, caption, width_cm=14.0):
+    """插入 mech/render 下的结构渲染图，图注居中。"""
+    path = os.path.join(r'E:\code\raspberrypi\mech\render\doc', filename)
+    doc.add_picture(path, width=Cm(width_cm))
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cap = doc.add_paragraph()
+    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cap.paragraph_format.space_after = Pt(8)
+    run = cap.add_run(caption)
+    run.font.size = Pt(9)
+    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run_east_asia(run, BODY_FONT)
+
+
+# --------------------------------------------------------------------- document
+
+doc = Document()
+setup_styles(doc)
+
+section = doc.sections[0]
+section.page_width = Cm(21.0)
+section.page_height = Cm(29.7)
+section.top_margin = Cm(2.2)
+section.bottom_margin = Cm(2.0)
+section.left_margin = Cm(2.4)
+section.right_margin = Cm(2.0)
+
+footer_p = section.footer.paragraphs[0]
+footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+footer_p.add_run('RASPBOT-V2 智能驾驶系统设计文档 v2.2  |  第 ')
+add_page_number(footer_p)
+footer_p.add_run(' 页')
+
+# cover
+title = doc.add_paragraph()
+title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+title.paragraph_format.space_before = Pt(100)
+run = title.add_run('RASPBOT-V2 智能驾驶小车')
+run.font.name = HEAD_FONT
+run.font.size = Pt(30)
+run.bold = True
+run.font.color.rgb = RGBColor(0x1F, 0x3B, 0x57)
+run_east_asia(run, HEAD_FONT)
+
+subtitle = doc.add_paragraph()
+subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+run = subtitle.add_run('系统设计文档')
+run.font.name = HEAD_FONT
+run.font.size = Pt(22)
+run.font.color.rgb = RGBColor(0x2E, 0x5A, 0x88)
+run_east_asia(run, HEAD_FONT)
+
+sub2 = doc.add_paragraph()
+sub2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+sub2.paragraph_format.space_before = Pt(10)
+run = sub2.add_run('解耦架构版 · 接口契约 · 工作包并行')
+run.font.size = Pt(12)
+run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+run_east_asia(run, BODY_FONT)
+
+doc.add_paragraph()
+info = doc.add_table(rows=5, cols=2)
+info.style = 'Table Grid'
+info.alignment = WD_TABLE_ALIGNMENT.CENTER
+for i, (k, v) in enumerate([
+    ('文档编号', 'RB2-SDD-002'),
+    ('版本', 'v2.2（替代 v2.1）'),
+    ('日期', '2026-11-13'),
+    ('适用平台', '树莓派 5 (8GB) + RASPBOT-V2 + Ubuntu 26.04 + ROS 2 Lyrical'),
+    ('本版要点', '传感器结构件设计（雷达托盘 / IMU 减震叠层）、雷达改为思岚 C1、结构件 BOM 与装配验收'),
+]):
+    for j, text in enumerate((k, v)):
+        cell = info.rows[i].cells[j]
+        cell.text = ''
+        run = cell.paragraphs[0].add_run(text)
+        run.font.size = Pt(10)
+        run.bold = (j == 0)
+        run_east_asia(run, BODY_FONT)
+
+doc.add_page_break()
+
+doc.add_heading('文档修订记录', level=1)
+add_table(
+    doc,
+    ['版本', '日期', '修订内容', '作者'],
+    [
+        ('v0.1', '2026-11-10', '初稿：平台现状、硬件选型结论、软件架构草案', '项目组'),
+        ('v1.0', '2026-11-10', '补充 BOM、需求清单、验收标准与六周排期', '项目组'),
+        ('v2.0', '2026-11-10',
+         '按解耦架构重写：/odom 从底盘节点剥离、TF 单一所有权、需求按工作包重组、新增接口契约与并行波次', '项目组'),
+        ('v2.1', '2026-11-12',
+         '修正 IMU 选型（HWT101 为单轴 Z 模组）、补充 TTL/RS-232/RS-485 与串口/I2C 决策、'
+         '新增 raspbot_imu 实现与验证结论、明确无人机复用边界', '项目组'),
+        ('v2.2', '2026-11-13',
+         '传感器定型（HWT101 非 CT 版 + 思岚 C1）；新增 §5.5 机械结构与传感器安装'
+         '（车体基准、三件套结构件、公差策略、结构件 BOM、装配与验收）；BOM 同步更新', '项目组'),
+    ],
+    widths=[1.8, 2.4, 9.8, 2.6],
+)
+note(doc, 'v2.0 与 v1.0 不兼容之处：底盘节点不再发布 /odom 与 odom→base_link；需求编号改为按工作包编号（FR-A-01 形式）。'
+          ' v2.1 为增量修订，不改变任何话题、TF 与参数契约。'
+          ' v2.2 同样不改变话题/TF 契约，只增补机械结构设计并把雷达型号变更为思岚 C1。')
+
+doc.add_heading('目录', level=1)
+add_toc(doc)
+doc.add_page_break()
+
+# ============================================================ 1
+doc.add_heading('1  概述', level=1)
+
+doc.add_heading('1.1  背景与目标', level=2)
+doc.add_paragraph(
+    '本项目以亚博智能 RASPBOT-V2 麦轮小车为移动平台，以树莓派 5（8GB）为上位机，基于 Ubuntu 26.04 LTS '
+    '与 ROS 2 Lyrical 构建室内外可用的智能驾驶系统。第一阶段完成“可靠底盘控制 + 多传感器融合定位 + 建图导航”闭环，'
+    '第二阶段引入 Hailo-8 承担视觉感知。'
+)
+doc.add_paragraph(
+    'v2.0 的核心变化不是增加功能，而是让系统可以被多个人（或多个 agent）并行开发：把里程计从底盘驱动中剥离，'
+    '为每个话题与坐标变换指定唯一所有者，并把需求重组为相互独立、接口冻结的工作包。'
+)
+bullets(doc, [
+    'P0：底盘可遥控、可发布原始速度，建成可用的融合里程计；',
+    'P0：室内完成建图与定点导航，具备基础避障与安全停车；',
+    'P1：户外平整路面可建图、可循迹、可避障；',
+    'P2：接入 Hailo-8，形成“安全层 + 语义层”的双层感知。',
+])
+
+doc.add_heading('1.2  平台现状', level=2)
+add_table(
+    doc,
+    ['项目', '现状', '说明'],
+    [
+        ('计算平台', '树莓派 5，8GB，Ubuntu 26.04.1 LTS (arm64)', '四核 Cortex-A76 @2.4GHz，SD 卡启动（58GB 已扩容）'),
+        ('中间件', 'ROS 2 Lyrical Luth', '/opt/ros/lyrical，199 个 ros-lyrical 包，rosdep 已初始化'),
+        ('底盘', 'RASPBOT-V2，四轮麦轮', '板载 MCU 经 I2C 0x2B 控制电机、舵机、灯效、超声、巡线'),
+        ('里程反馈', '无编码器', '厂商库无转速/位置回读接口，本设计的关键约束'),
+        ('相机', 'USB 相机 0c45:64ab（MJPG 640×480/1280×720）', '已实测出图；IMX219 若在 CSI 上需单独确认'),
+        ('其他 I2C 设备', '0x3C（疑似 SSD1306 OLED）', '可用于状态显示，本期不展开'),
+        ('网络', '有线 DHCP 固定为 192.168.50.98', '路由器已做 MAC-IP 绑定'),
+    ],
+    widths=[3.2, 5.6, 7.6],
+)
+
+doc.add_heading('1.3  已验证能力', level=2)
+add_table(
+    doc,
+    ['子系统', '验证方式', '结果'],
+    [
+        ('I2C 链路', 'i2cdetect -y 1 命中 0x2b；smbus 读写', '通过'),
+        ('四路电机', '逐轮正反转、四轮同转', '全部动作正常'),
+        ('云台舵机', '水平/俯仰扫动', '正常'),
+        ('超声波', '0x1a/0x1b 组合读数', '153–170 mm 稳定输出'),
+        ('四路巡线', '0x0a 读字节', '0x0f，四位均有读数'),
+        ('蜂鸣器/RGB', '指令下发', '无 I2C 报错'),
+        ('USB 相机', 'v4l2 MJPG 抓帧', '640×480 出图正常'),
+        ('ROS 2 底盘节点', '/cmd_vel → 电机，里程计积分', '0.1 m/s × 1.2 s → x=0.120 m'),
+    ],
+    widths=[3.4, 7.6, 5.4],
+)
+
+doc.add_heading('1.4  范围', level=2)
+add_table(
+    doc,
+    ['范围', '内容'],
+    [
+        ('本期范围', '底盘驱动重构（发布 /odom_raw）、IMU/雷达/相机接入、融合里程计、室内 SLAM、Nav2 定点导航、'
+                     '基础避障与安全策略、接口契约与工作包拆分'),
+        ('本期不做', '编码器改装、Hailo-8 视觉推理、GNSS 定位、机械结构改造、真实道路（机动车道）行驶'),
+        ('后续演进', '编码器/轮速闭环、Hailo-8 感知、户外全局定位、多车协同'),
+    ],
+    widths=[3.0, 13.4],
+)
+
+doc.add_heading('1.5  术语', level=2)
+add_table(
+    doc,
+    ['术语', '含义'],
+    [
+        ('WP', 'Work Package，工作包：可独立分配给一个 agent 的最小交付单元'),
+        ('契约', '话题、TF、参数、文件所有权的冻结约定，改动需全员同步'),
+        ('DoD', 'Definition of Done，完成定义，工作包交付必须满足的清单'),
+        ('/odom_raw', '底盘按指令积分得到的原始速度/位姿，不含 IMU 修正'),
+        ('EKF', '扩展卡尔曼滤波，本方案用 robot_localization 融合 IMU 与速度'),
+        ('DTOF', '直接飞行时间测距，抗环境光能力强于三角测距'),
+        ('QoS', 'ROS 2 通信服务质量策略'),
+    ],
+    widths=[3.0, 13.4],
+)
+
+# ============================================================ 2
+doc.add_page_break()
+doc.add_heading('2  需求分析', level=1)
+
+doc.add_heading('2.1  使用场景', level=2)
+add_table(
+    doc,
+    ['场景', '环境特征', '速度', '关键能力'],
+    [
+        ('S1 室内走廊/教室', '结构化、光照稳定、地面平整、有玻璃与桌腿', '≤0.5 m/s', '建图、重定位、定点导航、低矮障碍检测'),
+        ('S2 园区步道', '平整铺装、行人、日照变化、部分区域无特征', '≤1.0 m/s', '户外建图、避障、失位恢复'),
+        ('S3 演示/比赛', '固定场地、需快速部署与稳定复现', '≤1.0 m/s', '一键启动、日志回放、快速恢复'),
+        ('S4 教学调试', '桌面/架空、频繁改参', '—', '单模块可测、参数可热调、故障可诊断'),
+    ],
+    widths=[3.4, 6.0, 2.2, 7.0],
+)
+
+doc.add_heading('2.2  用例', level=2)
+add_table(
+    doc,
+    ['编号', '用例', '参与者', '主流程', '成功判据'],
+    [
+        ('UC-01', '遥控行驶', '操作员', '启动底盘节点 → 发布 /cmd_vel → 车按指令运动', '方向正确、松手 0.5 s 内停车'),
+        ('UC-02', '室内建图', '操作员', '启动 SLAM → 遥控走一圈 → 保存地图', '回到起点误差 <0.2 m，地图无明显重影'),
+        ('UC-03', '定点导航', '操作员', '加载地图 → 设定目标点 → 车自主到达', '成功率 ≥90%，全程无碰撞'),
+        ('UC-04', '避障', '系统', '前方出现障碍 → 代价地图膨胀 → 重规划或停车', '0.3 m 内停车，不接触障碍'),
+        ('UC-05', '户外巡径', '操作员', '加载户外地图 → 沿路径行驶', '偏离路径 <0.3 m，可人工接管'),
+        ('UC-06', '故障恢复', '系统', '指令超时/节点崩溃 → 停车并告警', '5 s 内停车，systemd 自动重启节点'),
+        ('UC-07', '并行开发', '开发者', '多个 agent 各自认领工作包 → 独立构建与自测 → 按门禁集成', '互不改动对方文件，集成一次通过'),
+    ],
+    widths=[1.6, 2.6, 2.2, 6.4, 4.6],
+)
+
+doc.add_heading('2.3  需求组织原则', level=2)
+bullets(doc, [
+    '按工作包分组编号（FR-A-01 表示工作包 A 的第 1 条需求），每条需求有且仅有一个属主工作包。',
+    '一条需求只描述一个可验收的行为，避免“同时管控制与里程计”这类复合需求。',
+    '凡是跨工作包的能力（如“融合里程计可用”），拆成各自的产出需求 + 一条集成验收用例。',
+    '需求编号不含时间顺序，排期见第 9 章。',
+])
+
+doc.add_heading('2.4  功能需求（按工作包）', level=2)
+
+doc.add_heading('2.4.1  WP-A 底盘驱动', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-A-01', '订阅 /cmd_vel，经麦轮逆解驱动四轮，支持前进/后退/横移/自转', 'P0', '实车四方向验证'),
+        ('FR-A-02', '指令超时 0.5 s 自动停车；节点退出时强制停车', 'P0', '杀掉发布端观察'),
+        ('FR-A-03', '发布 /odom_raw（nav_msgs/Odometry），反映指令速度积分，不含 IMU 修正', 'P0', '与指令速度一致'),
+        ('FR-A-04', '发布 /range 与 /line_sensor', 'P1', '遮挡/贴线测试'),
+        ('FR-A-05', '提供 /buzzer、/led、/servo_pan、/servo_tilt 接口', 'P1', '话题调用验证'),
+        ('FR-A-06', '每 1 s 重发指令，防止扩展板复位丢指令', 'P1', '断电重启后自动恢复'),
+        ('FR-A-07', '任何异常路径下 1 s 内四轮停转', 'P0', '注入故障'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.2  WP-B IMU 接入', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-B-01', '支持 ICM-42688-P（SPI）与 HWT101（UART）两种数据源，统一发布 /imu/data（100 Hz，含四元数与角速度）', 'P0', '静止/转动比对，角度误差 <2°'),
+        ('FR-B-02', '上电静止标定陀螺零偏，失败时告警并继续运行', 'P1', '标定前后漂移对比'),
+        ('FR-B-03', '地面模式（yaw）与全姿态模式（mahony）可配置', 'P1', '两种模式切换验证'),
+        ('FR-B-04', '串口/SPI 断线时发布诊断告警，不阻塞其他节点', 'P1', '拔线测试'),
+        ('FR-B-05', '设备路径可配置：/dev/raspbot_imu、/dev/spidev0.0', 'P1', '改参数生效'),
+        ('FR-B-06', '提供 mock 数据源与离线单元测试，无硬件可验证姿态解算', 'P1', 'pytest 全通过'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.3  WP-C 激光雷达接入', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-C-01', '启动 C1 驱动（sllidar_ros2，460800 8N1），发布 /scan（10 Hz，frame_id=laser）', 'P0', 'rviz2 点云与实物一致'),
+        ('FR-C-02', '提供 udev 规则，设备固定为 /dev/raspbot_lidar', 'P1', '反复插拔编号不变'),
+        ('FR-C-03', '提供外参标定流程（安装高度、偏航、俯仰）并写入 URDF', 'P1', '扫描与实测尺寸一致'),
+        ('FR-C-04', '提供量程与滤波参数模板（室内/户外两套）', 'P2', '切换参数生效'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.4  WP-D 相机接入', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-D-01', '启动相机驱动，发布 /image_raw 与 /camera_info（640×480@15）', 'P1', '图像与参数正确'),
+        ('FR-D-02', '提供内参标定产物（yaml）并接入 camera_info', 'P2', '标定重投影误差 <1 px'),
+        ('FR-D-03', '设备路径与分辨率可配置', 'P1', '改参数生效'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.5  WP-E 融合与里程计', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-E-01', '订阅 /odom_raw 与 /imu/data，发布 /odom 与唯一的 odom→base_link TF', 'P0', '直行 2 m 误差 <5 cm'),
+        ('FR-E-02', '航向优先采用 IMU；IMU 缺失时回落为开环积分并告警', 'P0', '拔掉 IMU 仍可运行'),
+        ('FR-E-03', '按实际误差设置协方差，供下游规划使用', 'P1', '协方差非零且合理'),
+        ('FR-E-04', '对 /cmd_vel 做限幅与平滑，输出到 /cmd_vel_safe', 'P1', '阶跃指令无突跳'),
+        ('FR-E-05', '发布 /odometry/filtered 供诊断与记录', 'P2', '话题存在且频率正确'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.6  WP-F 建图与定位', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-F-01', '基于 slam_toolbox 在线建图，发布 /map 与唯一的 map→odom TF', 'P0', '20 m² 场景成图'),
+        ('FR-F-02', '支持地图保存/加载（pgm + yaml）', 'P0', '重启后可加载'),
+        ('FR-F-03', '提供重定位流程（amcl 或扫描匹配）', 'P1', '初始偏差 0.3 m 可收敛'),
+        ('FR-F-04', '建图与定位模式互斥，切换由参数控制', 'P1', '同时启动不冲突'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.7  WP-G 导航与避障', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-G-01', '基于 Nav2 实现 NavigateToPose 定点导航，支持取消与重规划', 'P0', '5 个目标点成功率 ≥90%'),
+        ('FR-G-02', '配置局部/全局代价地图、障碍层与膨胀层', 'P0', '障碍前 0.3 m 停车'),
+        ('FR-G-03', '行为树包含恢复行为（清图、后退、等待）', 'P1', '卡住时能自恢复'),
+        ('FR-G-04', '订阅 /odom 与 /scan，不直接依赖任何硬件驱动', 'P0', 'mock 数据可跑通'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.4.8  WP-H 平台工程', level=3)
+add_table(
+    doc,
+    ['编号', '需求', '优先级', '验收'],
+    [
+        ('FR-H-01', 'systemd 服务：开机自启、异常重启、日志落盘', 'P1', '断电重启后 60 s 内可用'),
+        ('FR-H-02', 'udev 规则统一管理所有串口设备命名', 'P1', '插拔顺序不影响'),
+        ('FR-H-03', '发布 /diagnostics（节点心跳、I2C 错误计数、CPU/温度）', 'P2', '话题可见'),
+        ('FR-H-04', '提供 mock 节点：fake_base / fake_imu / fake_scan', 'P0', '无硬件可跑通 E/F/G'),
+        ('FR-H-05', 'rosbag 录制与回放脚本，含话题白名单', 'P1', '回放轨迹一致'),
+        ('FR-H-06', '遥控（键盘/手柄）与自主模式互斥切换', 'P1', '切换无冲突'),
+        ('FR-H-07', '远程可视化配置（Foxglove 或跨机 rviz2）', 'P2', '笔记本可查看'),
+    ],
+    widths=[1.8, 8.6, 1.6, 5.4],
+)
+
+doc.add_heading('2.5  非功能需求', level=2)
+add_table(
+    doc,
+    ['编号', '类别', '指标', '验证'],
+    [
+        ('NFR-01', '实时性', '底盘控制 30 Hz；Nav2 控制 20 Hz，周期抖动 <10%', 'topic hz / 时间戳'),
+        ('NFR-02', '端到端延迟', '传感器→指令输出 <100 ms（本地）', '打点测量'),
+        ('NFR-03', '资源占用', '峰值内存 <3 GB；CPU 均值 <70%（4 核）', 'top / tegrastats'),
+        ('NFR-04', '可靠性', '连续 2 h 无崩溃；I2C 错误率 <0.1%', '长稳测试'),
+        ('NFR-05', '安全性', '任何异常路径下 1 s 内停转', '故障注入'),
+        ('NFR-06', '模块独立性', '每个工作包可独立 colcon build 与单测，不依赖真车', 'CI 构建'),
+        ('NFR-07', '可移植性', '可在全新 Ubuntu 26.04 上按文档重建', '全新环境复现'),
+        ('NFR-08', '启动时间', '上电到可导航 <60 s', '计时'),
+        ('NFR-09', '契约稳定性', '话题/TF/参数名变更需版本号递增并通知全员', '评审记录'),
+        ('NFR-10', '温控', '满载 30 min 不降频（<80 °C）', 'vcgencmd measure_temp'),
+    ],
+    widths=[1.8, 2.6, 8.8, 4.2],
+)
+
+doc.add_heading('2.6  约束与假设', level=2)
+bullets(doc, [
+    '底盘无编码器：里程计只能由“指令速度 + IMU 航向”推算，精度边界必须显式声明。',
+    '扩展板固件不开放：I2C 寄存器协议以厂商 Raspbot_Lib 为准，不做固件级改动。',
+    '仅一台实车：硬件在环测试必须串行，其余工作包依赖 mock 与 bag 回放。',
+    '树莓派 5 无硬实时保证：控制环保持 30 Hz，安全逻辑以“超时即停”兜底。',
+    '户外仅限平整铺装路面，速度上限 1.0 m/s。',
+])
+
+# ============================================================ 3
+doc.add_page_break()
+doc.add_heading('3  总体架构', level=1)
+
+doc.add_heading('3.1  设计原则', level=2)
+add_table(
+    doc,
+    ['原则', '说明', '对应机制'],
+    [
+        ('单一所有者', '每个话题、每个 TF、每个文件只有一个属主', '第 4 章契约 + 第 8 章工作包'),
+        ('契约先行', '接口先冻结，再并行开发', '话题表、TF 表、参数表'),
+        ('解耦里程计', '底盘只发原始速度，融合节点独占 /odom 与 TF', '见 3.5 节'),
+        ('安全与语义分离', '避障只依赖几何传感器，视觉只做语义', '代价地图 + 超声补盲'),
+        ('离线/实时分离', 'Pi 做实时，NAS 做训练与回放', '部署视图'),
+        ('降级可用', '缺传感器时降级运行并告警', '降级表'),
+    ],
+    widths=[3.0, 8.2, 5.2],
+)
+
+doc.add_heading('3.2  分层', level=2)
+add_table(
+    doc,
+    ['层次', '组件', '职责', '属主'],
+    [
+        ('应用层', 'Nav2、slam_toolbox、teleop', '任务编排、规划、建图', 'G / F / H'),
+        ('融合层', 'ekf_node、安全监控', '多源位姿融合、限幅、降级', 'E'),
+        ('抽象层', '/cmd_vel、/odom_raw、/odom、/scan、/imu/data、/image_raw', '屏蔽硬件差异', '契约管理'),
+        ('驱动层', 'raspbot_base、raspbot_imu、lidar、camera', '设备读写与协议解析', 'A / B / C / D'),
+    ],
+    widths=[2.4, 8.0, 4.4, 1.6],
+)
+
+doc.add_heading('3.3  数据流', level=2)
+add_code(doc, """底盘 <--I2C--> raspbot_base --/odom_raw--> ekf_node --/odom--> Nav2 --/cmd_vel_safe--> raspbot_base
+IMU  <--UART--> raspbot_imu --/imu/data----> ekf_node
+雷达 <--USB---> lidar_driver  --/scan--------> slam_toolbox --/map--> Nav2
+                                           \\--> amcl（定位模式）
+相机 <--USB---> camera_driver --/image_raw---> 感知（后续 Hailo）
+超声 <--I2C--> raspbot_base  --/range-------> 安全监控
+""")
+
+doc.add_heading('3.4  部署视图', level=2)
+add_table(
+    doc,
+    ['位置', '职责', '说明'],
+    [
+        ('树莓派 5（车载）', '全部实时节点', '断网也能自主运行'),
+        ('笔记本（操作端）', 'rviz2 / Foxglove、遥控、参数调试、bag 分析', '有线或 5G WiFi 接入'),
+        ('NAS（离线）', '训练、量化、数据集、建图后处理', '不参与控制回路'),
+        ('Hailo-8（后续）', '视觉推理，装在 Pi 5 的 M.2 HAT+ 上', '不走网络'),
+    ],
+    widths=[3.6, 8.0, 4.8],
+)
+
+doc.add_heading('3.5  关键变更：里程计从底盘剥离', level=2)
+add_table(
+    doc,
+    ['项', 'v1.0（耦合）', 'v2.0（解耦）'],
+    [
+        ('/odom 发布者', 'raspbot_base', 'ekf_node（融合）'),
+        ('底盘节点产出', '/odom + odom→base_link TF', '/odom_raw（仅指令积分）'),
+        ('odom→base_link', '底盘节点', 'ekf_node'),
+        ('map→odom', '未定义，易冲突', 'slam_toolbox 或 amcl（独占）'),
+        ('并行开发', '底盘与融合改同一文件', '两个工作包互不接触'),
+        ('失败影响', '底盘崩则里程计全失', '底盘崩 → /odom_raw 停 → 融合降级为纯 IMU'),
+    ],
+    widths=[3.2, 6.6, 6.6],
+)
+note(doc, '这是 v2.0 最重要的一处改动：它把“硬件时序”与“估计精度”分开，让两个工作包可以独立迭代。')
+
+# ============================================================ 4
+doc.add_page_break()
+doc.add_heading('4  接口契约', level=1)
+doc.add_paragraph('本章为冻结内容。任何改动必须先更新契约版本号，并通知所有工作包属主。')
+
+doc.add_heading('4.1  文件所有权', level=2)
+add_table(
+    doc,
+    ['工作包', '独占路径', '备注'],
+    [
+        ('A 底盘', 'src/raspbot_base/**', '含 vendor 库'),
+        ('B IMU', 'src/raspbot_imu/**', '含姿态解算与标定'),
+        ('C 雷达', 'src/raspbot_bringup/lidar/**、udev 雷达段', '仅配置与启动'),
+        ('D 相机', 'src/raspbot_bringup/camera/**', '仅配置与标定'),
+        ('E 融合', 'src/raspbot_fusion/**、src/raspbot_description/**', 'URDF 与 TF 唯一维护者'),
+        ('F 建图', 'src/raspbot_bringup/slam/**、maps/**', 'map→odom 唯一发布者'),
+        ('G 导航', 'src/raspbot_bringup/nav2/**', 'nav2_params.yaml 属主'),
+        ('H 平台', 'src/raspbot_bringup/system/**、scripts/**、udev 通用段', 'systemd、mock、bag'),
+    ],
+    widths=[2.2, 10.2, 4.0],
+)
+note(doc, '跨包需求写成 issue，由属主修改；不得直接编辑他人路径。')
+
+doc.add_heading('4.2  话题契约', level=2)
+add_table(
+    doc,
+    ['话题', '类型', '发布者', '订阅者', '频率', 'QoS'],
+    [
+        ('/cmd_vel', 'geometry_msgs/Twist', 'teleop / Nav2', 'E', '≤30 Hz', 'Reliable'),
+        ('/cmd_vel_safe', 'geometry_msgs/Twist', 'E', 'A', '30 Hz', 'Reliable'),
+        ('/odom_raw', 'nav_msgs/Odometry', 'A', 'E', '30 Hz', 'Reliable'),
+        ('/imu/data', 'sensor_msgs/Imu', 'B', 'E', '100 Hz', 'SensorData'),
+        ('/scan', 'sensor_msgs/LaserScan', 'C', 'F、G', '10 Hz', 'SensorData'),
+        ('/odom', 'nav_msgs/Odometry', 'E', 'G、诊断', '30 Hz', 'Reliable'),
+        ('/odometry/filtered', 'nav_msgs/Odometry', 'E', '诊断', '30 Hz', 'Reliable'),
+        ('/range', 'sensor_msgs/Range', 'A', '安全监控', '5 Hz', 'SensorData'),
+        ('/line_sensor', 'std_msgs/UInt8', 'A', '巡线逻辑', '5 Hz', 'Reliable'),
+        ('/image_raw', 'sensor_msgs/Image', 'D', '感知', '15 Hz', 'SensorData'),
+        ('/map', 'nav_msgs/OccupancyGrid', 'F', 'G', '事件', 'Transient Local'),
+        ('/buzzer、/led、/servo_pan、/servo_tilt', 'Bool / ColorRGBA / Float32', '任意', 'A', '事件', 'Reliable'),
+        ('/diagnostics', 'diagnostic_msgs/DiagnosticArray', 'H', '监控', '1 Hz', 'Reliable'),
+    ],
+    widths=[4.2, 5.2, 3.0, 2.6, 2.0, 2.6],
+)
+
+doc.add_heading('4.3  TF 契约', level=2)
+add_table(
+    doc,
+    ['变换', '唯一发布者', '说明'],
+    [
+        ('map → odom', 'F（slam_toolbox 或 amcl）', '全局修正，建图/定位模式二选一'),
+        ('odom → base_link', 'E（ekf_node）', '连续位姿'),
+        ('base_link → laser / imu_link / camera_link / ultrasonic', 'robot_state_publisher（URDF 由 E 维护）', '静态标定值'),
+        ('base_link → base_footprint', 'robot_state_publisher', '地面投影'),
+    ],
+    widths=[5.4, 6.6, 4.4],
+)
+bullets(doc, [
+    '禁止在其他节点重复发布上表变换；禁止用 static_transform_publisher 发布动态变换。',
+    'frame_id 固定为：base_link、odom、map、laser、imu_link、camera_link、ultrasonic。',
+    '角度单位弧度，长度单位米，方向遵循右手定则。',
+])
+
+doc.add_heading('4.4  参数契约', level=2)
+add_table(
+    doc,
+    ['文件', '属主', '关键参数'],
+    [
+        ('raspbot_base/config/params.yaml', 'A', 'pwm_per_mps、k_geom、deadband、max_pwm、cmd_timeout'),
+        ('raspbot_fusion/config/ekf.yaml', 'E', '过程/观测噪声、IMU 外参、限幅'),
+        ('raspbot_bringup/slam/slam_params.yaml', 'F', '分辨率、匹配参数、地图边界'),
+        ('raspbot_bringup/nav2/nav2_params.yaml', 'G', '代价地图、控制器、行为树'),
+        ('raspbot_bringup/camera/camera.yaml', 'D', '分辨率、帧率、内参路径'),
+        ('raspbot_imu/config/imu.yaml', 'B', 'source、mode、angle_source、yaw_offset_deg、baud、协方差'),
+    ],
+    widths=[6.4, 2.2, 7.8],
+)
+
+doc.add_heading('4.5  变更流程', level=2)
+bullets(doc, [
+    '新增/重命名话题、TF、参数：提契约变更，版本号 +0.1，所有属主确认后合并。',
+    '删除话题或改变消息类型：版本号 +1.0，需同步升级所有消费者。',
+    '契约变更必须在当天的集成窗口内完成验证，不允许长时间“半新半旧”。',
+])
+
+# ============================================================ 5
+doc.add_page_break()
+doc.add_heading('5  硬件方案设计', level=1)
+
+doc.add_heading('5.1  IMU 选型', level=2)
+doc.add_paragraph(
+    '选型标准不是“轴数越多越好”，而是“每元买到的航向稳定性”。本车没有编码器，/odom_raw 由指令速度开环积分，'
+    'EKF 中 IMU 唯一可靠的状态是 yaw 与 yaw_rate；平地 2D 导航不需要 roll/pitch，磁力计在电机与金属环境下反而不可靠。'
+)
+add_table(
+    doc,
+    ['型号', '参考价', '输出/轴', '航向水平', '接口', '结论'],
+    [
+        ('HWT101', '约 180 元', '单轴 Z 角 + Z 角速度', '1.8–2 °/h，0.1°', 'UART / I2C', '选用'),
+        ('ICM-42688-P', '约 30 元', '6 轴原始数据', '自研融合，芯片级 2–3 °/h', 'SPI', '备选（可复用到无人机）'),
+        ('JY61P', '约 60 元', '6 轴，Z 角', '漂移 °/min 级', 'UART / I2C', '预算备选'),
+        ('JY901S', '约 130 元', '9 轴（含磁）', '中等，磁易受扰', 'UART / I2C', '不选'),
+        ('BNO085', '约 100–180 元', '9 轴 SH-2，四元数', '短时好、长时仍漂', 'I2C / UART-RVC', '备选'),
+        ('ICM-20948', '约 60 元', '9 轴裸芯片', '需自行融合', 'I2C / SPI', '不选'),
+    ],
+    widths=[2.4, 2.0, 3.4, 3.6, 3.0, 2.0],
+)
+note(doc, '价格为 2026-11 估价，下单前以实际询价为准；航向指标来自厂商数据手册，与模块焊接、标定质量相关。')
+
+doc.add_heading('5.1.1  事实修正：HWT101 是单轴模组', level=3)
+doc.add_paragraph(
+    '厂商规格书明确：HWT101 是单轴（Z 轴）倾角/航向模组，不是 9 轴 IMU。此前版本写作“9 轴融合”有误，本版更正。'
+)
+bullets(doc, [
+    '输出：Z 轴角度与角速度，航向精度 0.1°，陀螺量程 ±400 °/s；',
+    '零偏：10 s 平滑 2.03 °/h，Allan 方差 1.80 °/h；',
+    '供电 3.3–5.5 V（默认 5 V），工作电流 9.5 mA；',
+    'UART 4800–230400 bps，默认 115200 8N1；输出速率 0.2–500 Hz，默认仅 10 Hz；',
+    '无加速度计、气压计、磁罗盘，不能输出 roll/pitch。',
+])
+note(doc, '因此驱动必须把 HWT101 的 /imu/data 限制为 yaw 有效：roll/pitch 置 0 并给大协方差，否则 EKF 会被假数据带偏。')
+
+doc.add_heading('5.1.2  接口决策：TTL / RS-232 / RS-485', level=3)
+doc.add_paragraph(
+    '三者协议层都是 UART，差别在电气层；对树莓派 5 的适配度取决于电平、距离与总线拓扑。'
+)
+add_table(
+    doc,
+    ['接口', '电平', '直连 Pi 5', '典型距离', '拓扑', '结论'],
+    [
+        ('3.3 V TTL', '0 / 3.3 V', '可以', '<1 m', '点对点', '首选'),
+        ('5 V TTL', '0 / 5 V', '不可（会损伤 GPIO）', '<1 m', '点对点', '需电平转换或 USB-TTL'),
+        ('RS-232', '±5～±12 V', '不可', '约 15 m', '点对点', '仅旧设备，需 MAX3232'),
+        ('RS-485', '差分 ±1.5～5 V', '不可', '100–1200 m', '总线多机', '长线/工业，需 3.3 V 收发器'),
+    ],
+    widths=[2.0, 3.0, 2.8, 2.8, 2.8, 3.0],
+)
+bullets(doc, [
+    'Pi 5 GPIO 为 3.3 V 且不耐 5 V；40-pin 串口在 GPIO14/15（pin 8/10），设备名 /dev/ttyAMA0；',
+    'Pi 5 另有独立 3-pin 调试串口（/dev/ttyAMA10），控制台默认走那里，不必占用 40-pin UART；',
+    'RS-232 需 MAX3232（3.3 V 供电），仅当设备只有 DB9 时使用；',
+    'RS-485 需 3.3 V 收发器（SP3485/MAX3485）与方向控制，长线/强干扰建议隔离型并加终端电阻；',
+    '本项目距离 <0.5 m、单设备，直接用 3.3 V TTL 或 USB-TTL，不引入 232/485 转换。',
+])
+
+doc.add_heading('5.1.3  串口 vs I2C', level=3)
+add_table(
+    doc,
+    ['维度', 'UART', 'I2C'],
+    [
+        ('总线占用', '独占，互不干扰', '与底盘 0x2B、OLED 0x3C 共享 I2C-1'),
+        ('带宽/实时性', '115200 下 100 Hz 余量很大', '100 kHz 轮询，占用 10–20% 且受仲裁影响'),
+        ('故障影响', '只影响 IMU', 'SDA 锁死会拖垮底盘控制'),
+        ('驱动生态', '维特 ROS 驱动默认串口', '需自行实现读取与解析'),
+        ('结论', '选用', '不选用'),
+    ],
+    widths=[3.0, 7.0, 6.4],
+)
+note(doc, '契约规定同一时刻只允许一个进程打开 /dev/i2c-1；IMU 走 I2C 会与 base_node 争总线，故不采用。')
+
+doc.add_heading('5.1.4  预算与复用边界', level=3)
+bullets(doc, [
+    '省钱优先级：雷达 700→350 元（LD19）省 350 元；IMU 180→60 元只省 120 元，却直接牺牲唯一航向源，不建议先砍 IMU；',
+    '无人机 IMU（ICM-42688-P）可以下放到本车：约 30 元 + 1–2 周融合/标定，芯片级零偏 2–3 °/h，可复用到后续无人机项目；',
+    'HWT101 不能反向用于无人机：单轴、最高 500 Hz、UART/I2C、无气压计/磁罗盘，飞控需要 ≥1 kHz、三轴、SPI、抗振与冗余；',
+    '本项目为保进度选用 HWT101；驱动层抽象 ImuSource，保留 ICM-42688 路线，后续可平滑切换。',
+])
+
+doc.add_heading('5.2  激光雷达选型', level=2)
+add_table(
+    doc,
+    ['型号', '价格', '量程（日光下）', '原理', 'ROS 2 支持', '结论'],
+    [
+        ('RPLIDAR C1', '约 500 元', '12 m（6–8 m）', '三角+ToF 融合', 'sllidar_ros2', '选用'),
+        ('STL-27L', '约 700 元', '25 m（衰减小）', 'DTOF', 'ldlidar_stl_ros2', '备选'),
+        ('LD19', '约 350 元', '12 m（6–8 m）', '三角测距', 'ldlidar_stl_ros2', '室内够用'),
+        ('RPLIDAR A1M8', '约 600 元', '12 m', '三角测距', 'rplidar_ros', '型号过老'),
+    ],
+    widths=[2.4, 2.0, 3.6, 2.2, 3.4, 1.6],
+)
+doc.add_paragraph('选型依据：')
+bullets(doc, [
+    '低速避障不需要 25 m：1.5 m/s 时制动加延迟位移约 1.0 m，6 m 已有 6 倍余量；',
+    '雷达的价值主要在定位与建图，强光下量程下降与随机噪点会破坏扫描匹配；',
+    'v2.2 选型结论：采购定为思岚 C1（12 m / ±30 mm / 360° / 10 Hz，约 500 元）。C1 采用三角+ToF 融合，'
+    '室内与弱光庭院足够，预算比 STL-27L 低约 200 元；纯 DTOF 的 STL-27L 列为备选；',
+    '结构上预留通用八槽（BCD 20–48 mm），后续换 STL-27L 或 LD19 不需要重做支架；',
+    '2D 雷达只扫一个平面，看不到路沿与坑洞，需超声/ToF 补盲。',
+])
+
+doc.add_heading('5.3  计算与存储', level=2)
+add_table(
+    doc,
+    ['项目', '现状', '建议'],
+    [
+        ('CPU', '4×Cortex-A76 @2.4 GHz', 'Nav2 + SLAM + 感知峰值约 2 核；governor 设 performance'),
+        ('内存', '8 GB', '峰值 1.5–2.5 GB；已配 4 GB swap'),
+        ('存储', 'microSD 58 GB', '建议升级 NVMe，避免建图与 bag 写入磨损'),
+        ('散热', '需主动散热', '满载 30 min 不超 80 °C'),
+        ('AI 加速', '暂无', '后续 M.2 HAT+ 安装 Hailo-8'),
+    ],
+    widths=[2.6, 5.0, 8.8],
+)
+
+doc.add_heading('5.4  接口与供电', level=2)
+add_table(
+    doc,
+    ['设备', '接口', '设备节点', '供电', '备注'],
+    [
+        ('扩展板', 'I2C（GPIO2/3）', '/dev/i2c-1 @0x2B', 'Pi 5 排针', 'smbus 访问'),
+        ('HWT101', 'UART（USB-TTL）', '/dev/raspbot_imu', '3.3 V / <0.05 W', '100 Hz，115200 8N1；默认 10 Hz 需改'),
+        ('RPLIDAR C1', 'UART（经 CP2102 转 USB）', '/dev/raspbot_lidar', '5 V / 1.15 W', '10 Hz，460800 8N1，XH2.54-5P'),
+        ('USB 相机', 'USB 2.0/3.0', '/dev/video0', '5 V / 约 0.5 W', 'MJPG 640×480@30'),
+        ('OLED', 'I2C', '0x3C', '—', '可选状态显示'),
+    ],
+    widths=[2.8, 3.4, 4.6, 2.8, 3.0],
+)
+bullets(doc, [
+    '两个 USB 转串口设备分插不同 USB 控制器端口，避免带宽与中断争用；',
+    '传感器总电流 <300 mA，可由 Pi USB 供电，无需额外分电；',
+    'IMU 信号线与电机动力线分束走线，交叉处垂直；',
+    'HWT101 供 3.3 V，保证 TX/RX 为 3.3 V 电平；用 USB-TTL 时先确认转接板 IO 电平；',
+    '所有新增设备共地，单点接地。',
+])
+
+doc.add_heading('5.5  机械结构与传感器安装', level=2)
+doc.add_paragraph(
+    '本节把“传感器装在哪、用什么件、怎么保证精度”固定下来：先用车体 CAD 反推出的基准尺寸定义坐标系，'
+    '再按“模块化、可调、免打孔”的原则划分结构件，最后给出装配、打印与验收方法。'
+    '参数化模型与 STL 位于 mech/ 目录（build.py 顶部 PARAMS 可改，改完重新导出即可）。'
+)
+figure(doc, '00_assembly_top.jpg',
+       '图 5-1  传感器装配俯视：前部为 C1 前伸托盘，后部为 HWT101 减震叠层（甲板半透明）')
+
+doc.add_heading('5.5.1  设计约束', level=3)
+add_table(
+    doc,
+    ['约束', '来源', '对结构的影响'],
+    [
+        ('上层甲板仅 2.0 mm，不宜大面积打孔', '车体', '雷达用 C 形卡爪夹住前缘：免打孔、可逆、拆装 2 分钟'),
+        ('甲板 90×170 已被派、驱动板、云台占满', '车体', '传感器只能向前延伸或向上叠层，不能平铺'),
+        ('云台立柱 x∈[−8.5,10.5]，z 从 +26 到 +80', '车体', '2D 扫描面无法“绕开”，只能横向偏置或软件屏蔽'),
+        ('C1 55.6 见方、41.3 高、约 200 g、底部中心出线', '器件', '托盘需 ≥58 mm 纵深 + Ø22 走线孔'),
+        ('HWT101 要求水平、不耐强振动', '器件', '刚性板 + 硅胶柱；歪 1° 会让航向系统性偏 1°'),
+        ('麦轮振动大、电机动力线干扰强', '平台', '减震 + 线束应力释放 + 远离动力线'),
+    ],
+    widths=[6.2, 2.2, 8.0],
+)
+
+doc.add_heading('5.5.2  车体基准', level=3)
+doc.add_paragraph('坐标系：上层甲板前缘中点为原点，x 向右、y 向前、z 向上，甲板顶面 z = 0。')
+add_table(
+    doc,
+    ['项目', '数值（mm）', '说明'],
+    [
+        ('整车（含轮）', '≈180 × 160', '不含摄像头云台'),
+        ('上层甲板', '90 × 170 × 2.0', '黑色顶盖，前缘即车头正面'),
+        ('甲板顶面距地', '≈40', '按模型估算，实测为准'),
+        ('树莓派 5', '56 × 85，孔位 58×49（Ø2.7）', '派中心距甲板前缘 96.5'),
+        ('云台立柱', 'x −8.5…+10.5，y −29…−16，z +26…+80', '雷达唯一的遮挡源'),
+        ('车体几何中心', '甲板前缘后方 ≈77', 'IMU 安装位置（偏差 <25 mm 可忽略）'),
+    ],
+    widths=[3.6, 6.4, 6.4],
+)
+note(doc, '数据由厂商 STEP 模型反推（mech/work/step_probe*.py 可复现）。打印前用卡尺复核三个数：'
+          '甲板厚度 2.0、甲板宽度 90、前缘到云台立柱 16；与默认值不符时改 mech/build.py 的 PARAMS 重导出。')
+
+doc.add_heading('5.5.3  结构件划分与接口策略', level=3)
+add_table(
+    doc,
+    ['需求', '做法', '理由'],
+    [
+        ('不动车体、免打孔', 'C 形卡爪夹 1.5–3.5 mm 甲板前缘，2 颗 M3×8 自攻顶紧', '可逆，不破坏 2 mm 甲板'),
+        ('换雷达不重做', '8 条径向槽，覆盖 BCD 20–48 mm', 'C1 / A1 / LD19 的孔位都能落槽，±2 mm 误差可装'),
+        ('IMU 对中', '直接用树莓派 58×49 孔位定位', '整车唯一“已知且精确”的基准，装上即对中'),
+        ('抗振', '刚性转接板 → 4×M3 硅胶柱(10 mm) → 载板', '隔开 30–80 Hz，且不引入相对转动'),
+        ('高度可调', '18 mm 加高块（可叠 2 块）', '避让车头超声波/防撞条'),
+        ('走线与应力释放', '载板前后出线缺口 + 扎带槽', '线束力矩是 IMU 航向慢漂的常见诱因'),
+    ],
+    widths=[3.2, 7.0, 6.2],
+)
+
+doc.add_heading('5.5.4  零件 01：雷达前伸托盘', level=3)
+add_table(
+    doc,
+    ['项目', '尺寸/参数', '说明'],
+    [
+        ('外形', '80 × 70 × 5', 'PETG 打印，平放'),
+        ('前伸量', '58（甲板前缘之外）', 'C1 机体 55.6 见方，正好落在托盘上'),
+        ('卡爪', '槽高 3.4、咬入 8.8、M3 自攻', '兼容 1.5–3.5 mm 板厚，前端留 2.8 mm 连接上下颚'),
+        ('雷达安装面', '8 条径向槽 3.4×12，BCD 20–48', '覆盖主流 2D 雷达；转角可微调 0° 方向'),
+        ('走线孔', 'Ø22（中心）', 'C1 的 XH2.54 插头由此下穿'),
+        ('扫描面高度', '甲板 +34（C1）', '前方 180° 无遮挡；后向 ±12° 被云台立柱遮挡，见 §5.5.10'),
+    ],
+    widths=[3.4, 6.2, 6.8],
+)
+figure(doc, '01_lidar_shelf_iso.jpg',
+       '图 5-2  零件 01：前伸托盘（后部两个 C 形卡爪夹住甲板前缘，前部为通用八槽雷达安装面）',
+       width_cm=12.0)
+
+doc.add_heading('5.5.5  零件 02/03：IMU 刚性转接板与减震载板', level=3)
+add_table(
+    doc,
+    ['项目', '尺寸/参数', '说明'],
+    [
+        ('02 转接板', '62 × 70 × 5', '4×Ø2.7 沉头对派孔；4×Ø3.4 减震柱孔（22×18）'),
+        ('03 载板', '48 × 40 × 4', '4×M3 沉头减震柱孔；4 条 3.2×14 长槽覆盖 23–37 mm 孔距'),
+        ('模块固定', '长槽 M3×8，或 VHB + 扎带', '小尺寸模块常无安装孔，胶在剪切方向足够硬'),
+        ('高度链', '甲板 +10（派顶）+12 尼龙柱 +5 板 +10 柱 +4 板', 'IMU 约在甲板上方 40 mm，接近车体几何中心'),
+    ],
+    widths=[3.4, 6.6, 6.4],
+)
+figure(doc, '02_imu_exploded.jpg',
+       '图 5-3  IMU 叠层爆炸图：转接板（灰）→ 4×M3 硅胶减震柱（橙）→ 载板（蓝）→ HWT101（示意）')
+
+doc.add_heading('5.5.6  公差与可调性', level=3)
+bullets(doc, [
+    '卡槽 3.4 mm 对应 2.0 mm 甲板，留 1.4 mm 余量，实际可夹 1.5–3.5 mm；',
+    '雷达槽长 14 mm 覆盖 ±7 mm 孔距误差；IMU 长槽覆盖 23–37 mm 孔距；',
+    '所有螺纹孔按公称 +0.2 设计（M3→Ø3.4），打印时 XY 补偿 −0.1 mm；',
+    '沉头 90°（Ø6.4→Ø3.4），保证 HWT101 能贴合载板面而不会被螺钉头顶起；',
+    '悬空面均为 45° 或跨桥 <8 mm，01–03 无需支撑即可打印；',
+    '全部尺寸集中在 mech/build.py 的 PARAMS，改完一条命令重新导出 STL。',
+])
+
+doc.add_heading('5.5.7  结构件物料与打印参数', level=3)
+add_table(
+    doc,
+    ['物料', '规格', '数量', '用途'],
+    [
+        ('PETG 打印件', '01 / 02 / 03（04 可选）', '4', '结构主体'),
+        ('M3×8 自攻', '盘头', '2', '甲板前缘卡爪'),
+        ('M3 硅胶减震柱', 'M3 内螺纹，10×10 mm', '4', 'IMU 减震'),
+        ('M3×8 盘头 / M3×8 沉头', '—', '4 + 4', '减震柱两端（上端必须沉头）'),
+        ('M2.5×20 + M2.5×12 尼龙柱', '—', '4 + 4', '转接板越过 USB/网口固定在派孔上'),
+        ('M3×8 + M3 螺母', '—', '4', 'C1 固定'),
+        ('1×4 2.54 排针 / XH2.54 4P 端子线', '—', '1', 'HWT101 出线（弯针或直焊线）'),
+        ('3M VHB + 2.5×100 扎带', '—', '少量', '模块固定与线束应力释放'),
+    ],
+    widths=[4.6, 5.4, 1.6, 4.8],
+)
+add_table(
+    doc,
+    ['打印参数', '取值'],
+    [
+        ('材料', 'PETG（韧性好、耐温；PLA 夏季车内易软化）'),
+        ('层高 / 墙数 / 填充', '0.2 mm / 4 墙 / 30% gyroid'),
+        ('支撑', '01–03 不需要；04 需外壁支撑'),
+        ('摆放', '01 安装面朝下；02/03 平放'),
+        ('XY 补偿', '−0.1 mm（保证 M3 能进）'),
+    ],
+    widths=[5.0, 11.4],
+)
+
+doc.add_heading('5.5.8  装配顺序', level=3)
+add_table(
+    doc,
+    ['步骤', '操作', '要点'],
+    [
+        ('1', '01 卡爪从甲板前缘推到底，检查夹持', '能晃不掉为合格'),
+        ('2', '两颗 M3×8 自攻从下方顶紧', '分两次对角拧，避免顶裂 2 mm 甲板'),
+        ('3', 'C1 放上托盘，XH2.54 穿 Ø22 孔，4 颗 M3 固定', '先对准 0° 刻线与前缘缺口再拧紧'),
+        ('4', '拆派 4 颗 M2.5 → 装 12 mm 尼龙柱 → 02 → M2.5×20', '对角、分 3 次拧紧'),
+        ('5', '减震柱装到 02，再用 M3 沉头把 03 拧到柱上', '沉头必须与板面齐平'),
+        ('6', 'HWT101 固定（长槽或 VHB+扎带），X 轴朝车头', '水平泡确认水平，再上电标定'),
+    ],
+    widths=[1.4, 8.2, 6.8],
+)
+
+doc.add_heading('5.5.9  验收：遮挡、外参与水平度', level=3)
+bullets(doc, [
+    '/scan：正前方 180° 应无鬼影；正后方若出现约 ±12° 的固定短射线，是云台立柱（22 mm 宽物体在 50 mm 处），'
+    '对 2D SLAM 影响很小，可按 §5.5.10 处理；',
+    'HWT101：静止 60 s 用 tools/hwt101_static_check.py 记录噪声与漂移，装车后再测一次做对照；',
+    'TF：laser_link 相对 base_link 用卷尺实测（设计初值 x=107、z=34 mm），误差 ≤±2 mm / ±0.5°；',
+    'imu_link：由 HWT101 实际安装位置决定，X 轴与车头夹角用 yaw_offset_deg 补偿（≤3°）。',
+])
+add_code(doc, '# base_link 在轴距中点（甲板前缘后方 77mm）\n'
+              'ros2 run tf2_ros static_transform_publisher \\\n'
+              '  --x 0 --y 0.107 --z 0.034 --roll 0 --pitch 0 --yaw 0 \\\n'
+              '  --frame-id base_link --child-frame-id laser_link')
+note(doc, 'TF 必须用卷尺实测，不要直接沿用设计初值：结构件有打印公差，2 mm 的外参误差会在建图上表现为系统性错位。')
+
+doc.add_heading('5.5.10  风险与备选', level=3)
+add_table(
+    doc,
+    ['风险', '影响', '对策'],
+    [
+        ('前伸 58 mm 使车长 175→233', '转弯半径变化、前部先撞', '缩短 shelf_y1；或换更小的雷达（LD19）'),
+        ('C1 约 200 g 压在卡爪上', '长期振动可能微滑', '卡爪与甲板间加 0.5 mm 双面胶；或改螺栓固定'),
+        ('扫描面 +34 与云台立柱同高', '后向 ±12° 盲区', '托盘横向偏置 / 高塔 / laser_filters 屏蔽'),
+        ('HWT101 怕振动', '空载时角度抖 0.2–0.5°', '减震柱 + 应力释放 + 必要时 30 Hz 低通'),
+        ('载板按 30×28 孔距预设', '孔距不符装不上', '改 imu_hole_dx/dy 重导出；或直接用 VHB'),
+    ],
+    widths=[4.6, 5.2, 6.6],
+)
+
+doc.add_heading('5.6  时钟同步', level=2)
+bullets(doc, [
+    '车载节点同机运行，使用系统单调时钟，use_sim_time=false；',
+    '跨机依赖 chrony，偏差 <10 ms；',
+    'IMU 与雷达用 message_filters 近似时间同步（容差 20 ms）。',
+])
+
+# ============================================================ 6
+doc.add_page_break()
+doc.add_heading('6  BOM 清单', level=1)
+
+doc.add_heading('6.1  已有设备', level=2)
+add_table(
+    doc,
+    ['序号', '名称', '型号/规格', '数量', '单价', '小计', '备注'],
+    [
+        ('1', '上位机', '树莓派 5 8GB', '1', '750', '750', '已部署 Ubuntu 26.04 + ROS 2'),
+        ('2', '小车底盘', '亚博 RASPBOT-V2 麦轮套装', '1', '1200', '1200', '含扩展板、电机、舵机、超声、巡线'),
+        ('3', '相机', 'USB 相机（MJPG）', '1', '80', '80', '已实测出图'),
+        ('4', '存储', 'microSD 64GB', '1', '60', '60', '建议换 NVMe'),
+        ('5', '散热', '主动散热器', '1', '60', '60', '防降频'),
+    ],
+    widths=[1.2, 2.6, 4.6, 1.2, 2.0, 1.8, 4.8],
+)
+
+doc.add_heading('6.2  本次新增', level=2)
+add_table(
+    doc,
+    ['序号', '名称', '型号/规格', '数量', '单价', '小计', '用途'],
+    [
+        ('1', 'IMU', 'HWT101（UART）', '1', '180', '180', '航向（单轴 Z）'),
+        ('2', '2D 激光雷达', '思岚 RPLIDAR C1', '1', '500', '500', '定位、建图、避障'),
+        ('3', 'USB-TTL', 'CH340/CP2102', '1', '20', '20', 'IMU 转接'),
+        ('4', '雷达支架', '铝合金/3D 打印', '1', '50', '50', '保证水平'),
+        ('5', 'IMU 支架与螺丝', 'M2/M3', '1', '20', '20', '刚性安装'),
+        ('6', 'USB 延长与理线', '带磁环', '2', '15', '30', '抗干扰'),
+        ('7', '分电与开关', '5V 分线板 + 开关', '1', '30', '30', '独立供电'),
+        ('', '合计', '', '', '', '830', ''),
+    ],
+    widths=[1.2, 3.0, 4.2, 1.2, 1.8, 1.6, 4.6],
+)
+
+doc.add_heading('6.3  可选升级', level=2)
+add_table(
+    doc,
+    ['项目', '型号', '价格', '收益', '触发条件'],
+    [
+        ('NVMe', 'M.2 HAT+ + 256GB', '约 330 元', '读写稳定、寿命长', '频繁建图/录包'),
+        ('AI 加速', 'Hailo-8（26 TOPS）', '约 1000 元', '视觉实时化', '需要语义感知'),
+        ('补盲', 'VL53L5CX ToF 阵列', '约 80 元', '防跌落、低矮障碍', '户外台阶场景'),
+        ('编码器', 'AS5600 + TCA9548A + RP2040', '约 150 元', '轮速闭环', '需定距移动'),
+        ('IMU 备选', 'ICM-42688-P 模块（SPI）', '约 30 元', '驱动可复用到无人机', '自研融合/标定'),
+        ('GNSS', 'GNSS/RTK', '800–3000 元', '户外绝对定位', '大范围自主'),
+    ],
+    widths=[2.4, 5.0, 3.0, 4.0, 3.6],
+)
+
+# ============================================================ 7
+doc.add_page_break()
+doc.add_heading('7  软件架构', level=1)
+
+doc.add_heading('7.1  节点清单', level=2)
+add_table(
+    doc,
+    ['节点', '包', '功能', '频率', 'WP'],
+    [
+        ('raspbot_base', 'raspbot_base', 'I2C 底盘、麦轮逆解、/odom_raw、超声/巡线', '30 Hz', 'A'),
+        ('imu_node', 'raspbot_imu', 'ICM-42688 SPI / HWT101 串口、姿态解算、/imu/data', '100 Hz', 'B'),
+        ('lidar_driver', 'ldlidar_stl_ros2', '/scan', '10 Hz', 'C'),
+        ('camera_driver', 'v4l2_camera', '/image_raw、/camera_info', '15 Hz', 'D'),
+        ('ekf_node', 'robot_localization', '/odom、odom→base_link', '30 Hz', 'E'),
+        ('slam_toolbox', 'slam_toolbox', '/map、map→odom', '按扫描', 'F'),
+        ('nav2 栈', 'nav2_bringup', '规划、控制、行为树、代价地图', '1/20 Hz', 'G'),
+        ('safety_monitor', 'raspbot_safety', '心跳、超时、急停', '10 Hz', 'E/H'),
+        ('mock 节点', 'raspbot_mock', 'fake_base / fake_imu / fake_scan', '可配', 'H'),
+    ],
+    widths=[3.0, 4.2, 7.4, 2.4, 1.4],
+)
+
+doc.add_heading('7.2  仓库结构', level=2)
+add_code(doc, """ros2_ws/
+├── CONTRACTS.md                  # 本文件第 4 章的机器可读版本
+└── src/
+    ├── raspbot_base/             # A 底盘
+    ├── raspbot_imu/              # B IMU（ICM-42688 / HWT101）
+    ├── raspbot_fusion/           # E 融合（含 ekf 配置）
+    ├── raspbot_description/      # E URDF 与静态 TF
+    ├── raspbot_bringup/          # C/D/F/G/H 的 launch 与参数
+    │   ├── lidar/
+    │   ├── camera/
+    │   ├── slam/
+    │   ├── nav2/
+    │   └── system/
+    ├── raspbot_safety/           # E 安全监控
+    └── raspbot_mock/             # H mock 节点""")
+
+doc.add_heading('7.3  里程计与融合策略', level=2)
+add_table(
+    doc,
+    ['阶段', '方案', '精度预期', '适用'],
+    [
+        ('阶段一', 'A 发 /odom_raw；E 用 IMU 航向替换积分航向，平移仍由指令速度积分', '直线 2 m 误差 <5 cm；转动 <2°', '室内低速'),
+        ('阶段二', 'E 用 EKF 融合 /odom_raw 与 /imu/data，叠加雷达扫描匹配', '20 m² 闭环误差 <0.2 m', '室内建图导航'),
+        ('阶段三（可选）', '编码器或光流提供速度真值', '接近常规移动机器人', '户外长距离'),
+    ],
+    widths=[3.0, 7.6, 5.0, 3.4],
+)
+bullets(doc, [
+    'IMU 安装后静止 10 s 估计零偏，安装偏航角写入参数；',
+    '速度指令作为模型输入而非观测，EKF 中低权重融合，避免把打滑误差当真值；',
+    '协方差按实际误差设置（x/y 0.05–0.10，yaw 0.02）。',
+    'IMU 默认 yaw 模式（只积分 Z 轴角速度），roll/pitch 协方差给 1.0，yaw 方差默认 0.0025；',
+])
+
+doc.add_heading('7.4  安全与降级', level=2)
+add_table(
+    doc,
+    ['风险', '检测', '动作', '属主'],
+    [
+        ('指令丢失', '/cmd_vel 超时 0.5 s', '四轮置零', 'A'),
+        ('IMU 掉线', '/imu/data 超时 1 s', '回落开环航向，限速 0.5 m/s', 'E'),
+        ('雷达掉线', '/scan 超时 0.5 s', '退出自主导航，保留遥控', 'G'),
+        ('I2C 连续错误', '>10 次/分钟', '节点重启', 'A'),
+        ('节点崩溃', 'systemd 监测', '5 s 内重启', 'H'),
+        ('温度过高', '>80 °C', '降频并告警', 'H'),
+        ('急停', '按钮或 /estop', '立即断使能', 'A/E'),
+    ],
+    widths=[2.8, 5.0, 6.8, 2.0],
+)
+
+doc.add_heading('7.5  运行与部署', level=2)
+add_code(doc, """# /etc/udev/rules.d/99-raspbot.rules
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="raspbot_imu"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="raspbot_lidar"
+KERNEL=="ttyUSB*", MODE="0666\"""")
+add_code(doc, """# /etc/systemd/system/raspbot.service
+[Unit]
+Description=RASPBOT base + fusion
+After=network.target
+[Service]
+ExecStart=/bin/bash -lc 'source /opt/ros/lyrical/setup.bash && source /home/ubuntu/ros2_ws/install/setup.bash && ros2 launch raspbot_bringup bringup.launch.py'
+Restart=always
+RestartSec=5
+User=ubuntu
+[Install]
+WantedBy=multi-user.target""")
+
+doc.add_page_break()
+doc.add_heading('7.6  IMU 姿态解算实现（raspbot_imu）', level=2)
+doc.add_paragraph(
+    '驱动与姿态解算独立成包 raspbot_imu，通过 ImuSource 抽象隔离硬件：mock（离线测试）、witmotion（HWT101 串口）、'
+    'icm42688（SPI 裸芯片）。换传感器只改配置，不改 EKF 与导航。'
+)
+add_table(
+    doc,
+    ['模块', '实现', '说明'],
+    [
+        ('attitude.py', '四元数 + Mahony + YawEstimator', 'yaw 模式见下：device 用模块角度、gyro 积分 Z 轴；mahony 输出全姿态，加速度计带 ±25% 门限'),
+        ('icm42688.py', 'SPI 轮询驱动', '寄存器与 Linux inv_icm42600 驱动核对；WHO_AM_I 不符直接报错'),
+        ('sources.py', '数据源抽象 + 维特 0x55 帧解析', '串口非阻塞读取，校验失败自动重同步'),
+        ('node.py', 'ROS 2 节点', '发布 /imu/data（100 Hz），协方差按 yaw 与 roll/pitch 分别设置'),
+    ],
+    widths=[2.6, 6.4, 7.4],
+)
+bullets(doc, [
+    '航向来源（v2.2 起默认）：angle_source=device，直接用 HWT101 内部卡尔曼融合的 Z 角度（0.1°），不再二次积分；'
+    '设 gyro 可恢复原积分逻辑，供 ICM-42688 等裸芯片使用；',
+    '上电静止 5 s 标定零偏（仅 gyro / mahony 路径需要），失败告警并继续；静止时慢速跟踪 Z 轴零偏；',
+    '离线验证：29 个单元测试全通过；合成数据 12 s 航向 RMSE 0.136°、最大误差 0.270°；',
+    '限制：航向为相对值、无温度补偿、无磁；长期漂移必须由雷达匹配修正；',
+    '契约对接：话题 /imu/data、frame_id=imu_link、100 Hz 不变；包路径为 raspbot_imu（原 hwt101_driver）。',
+])
+
+# ============================================================ 8
+doc.add_page_break()
+doc.add_heading('8  工作包与并行计划', level=1)
+doc.add_heading('8.1  工作包定义', level=2)
+add_table(
+    doc,
+    ['WP', '名称', '交付物', '依赖', '可并行'],
+    [
+        ('A', '底盘驱动', 'raspbot_base 包、/odom_raw、参数标定', '无', '第 1 波'),
+        ('B', 'IMU 接入', 'raspbot_imu、姿态解算、/imu/data', '硬件', '第 1 波'),
+        ('C', '雷达接入', 'launch、/scan、udev、外参', '硬件', '第 1 波'),
+        ('D', '相机接入', '相机 launch、内参、/image_raw', '无', '第 1 波'),
+        ('E', '融合与里程计', 'raspbot_fusion、/odom、TF、URDF', 'A、B', '第 2 波'),
+        ('F', '建图与定位', 'slam 参数、地图存取、map→odom', 'C、E', '第 3 波'),
+        ('G', '导航与避障', 'nav2 参数、代价地图、行为树', 'F', '第 4 波'),
+        ('H', '平台工程', 'systemd、udev、诊断、mock、bag', '无', '第 1 波'),
+    ],
+    widths=[1.0, 2.6, 8.6, 2.2, 2.0],
+)
+
+doc.add_heading('8.2  依赖图', level=2)
+add_code(doc, """A ──┐
+    ├──> E ──> F ──> G
+B ──┘         ^
+C ────────────┘
+D （独立，供后续感知）
+H （独立，供全员使用：mock / udev / systemd）""")
+
+doc.add_heading('8.3  并行波次', level=2)
+add_table(
+    doc,
+    ['波次', '时间', '并行工作包', '集成门禁'],
+    [
+        ('第 1 波', 'W1–W2', 'A、B、C、D、H（5 个 agent）', '各包独立构建通过；A 的 /odom_raw 频率与量程正确'),
+        ('第 2 波', 'W2–W3', 'E（依赖 A、B 产物）', '直行 2 m 误差 <5 cm，/odom 与 TF 唯一'),
+        ('第 3 波', 'W3–W4', 'F（依赖 C、E）', '20 m² 建图闭环 <0.2 m'),
+        ('第 4 波', 'W4–W5', 'G（依赖 F）', '定点导航成功率 ≥90%'),
+        ('收尾', 'W5–W6', '全员：安全、性能、户外、文档', '验收用例全通过'),
+    ],
+    widths=[1.6, 2.6, 7.0, 5.4],
+)
+
+doc.add_heading('8.4  隔离规则', level=2)
+add_table(
+    doc,
+    ['对象', '规则'],
+    [
+        ('文件', '只改本 WP 独占路径；跨包需求写 issue'),
+        ('工作区', '每个 agent 独立 ws_<name> 或 git worktree，禁止共享 build/install/log'),
+        ('实车', '排班使用，同一时刻仅一个 agent 上电；其余用 mock 或 bag'),
+        ('设备', '禁止两个进程同时打开 /dev/i2c-1'),
+        ('依赖', '新增依赖须在 package.xml 声明并在 PR 说明'),
+    ],
+    widths=[3.0, 13.4],
+)
+
+doc.add_heading('8.5  完成定义（DoD）', level=2)
+bullets(doc, [
+    '独立 colcon build 通过，无新增警告；',
+    '有脱离真车的测试（单测或 bag 回放），README 写明运行方式；',
+    'README 含发布/订阅、参数说明、启动命令、已知限制；',
+    '未修改他人路径、未改动契约；',
+    '至少一条对应验收用例可执行并通过。',
+])
+
+# ============================================================ 9
+doc.add_page_break()
+doc.add_heading('9  开发排期', level=1)
+
+doc.add_heading('9.1  六周计划', level=2)
+add_table(
+    doc,
+    ['周', '日期', '并行工作包', '任务', '交付/里程碑'],
+    [
+        ('W1', '11/11–11/17', 'A B C D H', '硬件到货安装；udev；驱动接入；URDF 初版；mock 节点', 'M1a：硬件与驱动就绪'),
+        ('W2', '11/18–11/24', 'A B（收尾）→ E', '底盘重构 /odom_raw；IMU 标定；EKF 融合；标定 pwm/k_geom', 'M1：里程计达标'),
+        ('W3', '11/25–12/01', 'F', 'slam 参数整定；建图流程；地图存取；重定位', 'M2：室内地图可用'),
+        ('W4', '12/02–12/08', 'G', 'Nav2 配置；代价地图；定点导航；恢复行为', 'M3：定点导航闭环'),
+        ('W5', '12/09–12/15', 'E G H', '避障与安全策略；异常恢复；性能与温控；bag 工具链', '—'),
+        ('W6', '12/16–12/22', '全员', '户外验证；长稳；文档定稿；移交', 'M4：户外演示通过'),
+    ],
+    widths=[1.0, 2.8, 3.2, 6.4, 4.6],
+)
+
+doc.add_heading('9.2  里程碑', level=2)
+add_table(
+    doc,
+    ['里程碑', '日期', '验收标准'],
+    [
+        ('M1a', '11/17', '五个第 1 波工作包各自构建通过；rviz2 可见 TF、点云、图像'),
+        ('M1', '11/24', '/odom 指标达标；契约冻结版发布'),
+        ('M2', '12/01', '室内地图可用，重定位成功'),
+        ('M3', '12/08', '定点导航闭环，无碰撞'),
+        ('M4', '12/22', '户外演示通过，文档与脚本齐全'),
+    ],
+    widths=[2.0, 2.6, 11.8],
+)
+
+doc.add_heading('9.3  资源与依赖', level=2)
+add_table(
+    doc,
+    ['资源', '需求', '到位时间', '风险'],
+    [
+        ('HWT101', '1 套', 'W1 前', '缺货用 BNO085 替代'),
+        ('RPLIDAR C1', '1 套', 'W1 前', '缺货用 LD19 顶替，参数可切'),
+        ('调试场地', '室内 ≥20 m²', 'W3 前', '受限则缩小地图'),
+        ('agent 并行数', '第 1 波最多 5 个', 'W1', '文件冲突风险，靠契约约束'),
+    ],
+    widths=[3.2, 4.6, 3.0, 5.6],
+)
+
+doc.add_heading('9.4  缓冲与裁剪', level=2)
+bullets(doc, [
+    '每周预留 0.5 天缓冲用于硬件与参数返工；',
+    '建图受阻时优先保证“静态地图 + 定点导航”，建图改离线；',
+    '硬件延迟时先做 mock 驱动的 E/F/G 空跑，不等硬件。',
+])
+
+# ============================================================ 10
+doc.add_page_break()
+doc.add_heading('10  测试与验收', level=1)
+
+doc.add_heading('10.1  测试策略', level=2)
+add_table(
+    doc,
+    ['层级', '内容', '工具', '属主'],
+    [
+        ('单元', '麦轮逆解、限幅、超时、协议解析、标定算法', 'pytest / colcon test', '各 WP'),
+        ('包级', '单包启动、话题存在、频率正确', 'ros2 topic hz/echo', '各 WP'),
+        ('集成', '话题连通、TF 唯一、QoS 匹配', 'tf2_echo、rqt_graph', 'E/H'),
+        ('实车', '直行/转向/横移/避障/建图/导航', '测试用例表', '全员'),
+        ('长稳', '连续 2 h，监控内存/温度/I2C 错误', 'top、vcgencmd', 'H'),
+    ],
+    widths=[2.2, 8.2, 4.4, 1.6],
+)
+
+doc.add_heading('10.2  集成验收用例', level=2)
+add_table(
+    doc,
+    ['编号', '用例', '步骤', '通过标准', '涉及 WP'],
+    [
+        ('TC-01', '直行精度', '0.2 m/s 持续 10 s', '2.0 m ± 5 cm，横向 <3 cm', 'A E'),
+        ('TC-02', '转向精度', '0.5 rad/s 转 4 s', '114.6° ± 2°', 'A E'),
+        ('TC-03', '横移', 'linear.y=0.2 持续 2 s', '0.4 m ± 5 cm，航向不变', 'A E'),
+        ('TC-04', '超时停车', '发布后杀掉发布端', '0.5 s 内停转', 'A E'),
+        ('TC-05', '建图闭环', '20 m² 绕行一圈', '位置误差 <0.2 m，无重影', 'C E F'),
+        ('TC-06', '重定位', '初始偏差 0.3 m / 10°', '10 s 内收敛，误差 <0.1 m', 'F'),
+        ('TC-07', '定点导航', '随机 5 个目标点', '成功率 ≥90%，无碰撞', 'G'),
+        ('TC-08', '动态避障', '路径中放 30 cm 障碍', '0.3 m 前停车或绕行', 'G'),
+        ('TC-09', '传感器掉线', '运行中拔雷达', '自主导航退出，遥控可用', 'G H'),
+        ('TC-10', '长稳', '连续 2 h 巡航', '无崩溃，内存增长 <10%，<80 °C', 'H'),
+        ('TC-11', '契约一致性', '启动全部节点', '无重复 TF、无重复话题发布者', 'E H'),
+    ],
+    widths=[1.4, 2.8, 5.4, 5.2, 1.6],
+)
+
+doc.add_heading('10.3  验收标准', level=2)
+bullets(doc, [
+    'P0 需求全部通过，P1 通过率 ≥80%，P2 可延后；',
+    '安全相关用例（TC-04、TC-08、TC-09、TC-11）必须 100% 通过；',
+    '可在全新 Ubuntu 26.04 上按文档复现部署；',
+    '契约文件、参数、地图、launch 全部纳入版本管理。',
+])
+
+# ============================================================ 11
+doc.add_heading('11  风险登记册', level=1)
+add_table(
+    doc,
+    ['编号', '风险', '概率', '影响', '对策'],
+    [
+        ('R-01', '无编码器导致里程计漂移', '高', '高', 'IMU 航向 + 扫描匹配；限速；缩短单次任务'),
+        ('R-02', '2D 雷达看不到低矮障碍', '高', '高', '超声/ToF 补盲；限定区域；人工监护'),
+        ('R-03', '户外阳光造成点云噪点', '中', '中', 'DTOF；调低 max_range；滤波'),
+        ('R-04', '热降频影响控制周期', '中', '中', '主动散热；performance governor'),
+        ('R-05', 'SD 卡磨损与 IO 瓶颈', '中', '中', '换 NVMe；限制 bag 保留'),
+        ('R-06', '多 agent 并行造成文件冲突', '中', '中', '契约 + 独立工作区 + 属主审批'),
+        ('R-07', '契约漂移导致集成失败', '中', '高', '版本号管理；每日集成窗口'),
+        ('R-08', '单台实车成为测试瓶颈', '高', '中', 'mock + bag；测试排班'),
+        ('R-09', 'Nav2 参数与车体不匹配', '中', '中', '分阶段调参；先静态地图'),
+        ('R-10', '底盘机械极限（无悬挂、无刹车）', '高', '高', '限平整路面与 1 m/s；急停'),
+    ],
+    widths=[1.4, 6.4, 1.6, 1.6, 8.6],
+)
+
+# ============================================================ 12
+doc.add_heading('12  后续演进', level=1)
+add_table(
+    doc,
+    ['阶段', '内容', '收益', '前置'],
+    [
+        ('E1', '编码器（AS5600 + TCA9548A + RP2040）', '轮速闭环、里程计精度', '确认轮轴空间'),
+        ('E2', 'Hailo-8 边缘推理', '检测/分割实时化', '散热与供电评估'),
+        ('E3', 'EKF 双实例（local/global）', '局部连续与全局跳变分离', 'E1/E2 数据'),
+        ('E4', 'GNSS/RTK 或视觉重定位', '户外大范围自主', '场地与法规'),
+        ('E5', '底盘升级（阿克曼/悬挂/制动）', '真实道路能力', '预算'),
+        ('E6', 'IMU 复用：ICM-42688 驱动与姿态解算迁移到无人机', '一套代码两用，降低新项目成本', '无人机项目启动'),
+    ],
+    widths=[1.2, 7.0, 5.2, 5.0],
+)
+
+# ============================================================ 13
+doc.add_page_break()
+doc.add_heading('13  附录', level=1)
+
+doc.add_heading('13.1  常用命令', level=2)
+add_code(doc, """# 底盘
+ros2 run raspbot_base base_node
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"
+
+# IMU
+ros2 launch raspbot_imu imu.launch.py
+ros2 topic hz /imu/data
+
+# 设备
+sudo i2cdetect -y 1
+ls -l /dev/raspbot_imu /dev/raspbot_lidar /dev/video0
+
+# 建图 / 导航
+ros2 launch slam_toolbox online_async_launch.py
+ros2 run nav2_map_server map_saver_cli -f ~/maps/room
+ros2 launch nav2_bringup navigation_launch.py map:=/home/ubuntu/maps/room.yaml
+
+# 诊断
+ros2 topic hz /scan
+ros2 run tf2_tools view_frames""")
+
+doc.add_heading('13.2  参考路径', level=2)
+add_table(
+    doc,
+    ['内容', '路径'],
+    [
+        ('厂商资料库', r'E:\开发资料库\RASPBOT-V2 AI视觉小车'),
+        ('厂商库与示例', r'E:\code\raspberrypi\docs\raspbot\py'),
+        ('ROS 2 工作区', r'E:\code\raspberrypi\ros2_ws'),
+        ('接口契约（机器可读）', r'E:\code\raspberrypi\ros2_ws\CONTRACTS.md'),
+        ('IMU 驱动包', r'E:\code\raspberrypi\ros2_ws\src\raspbot_imu'),
+        ('项目技能', r'E:\code\raspberrypi\.dsh\skills\raspbot-v2'),
+    ],
+    widths=[6.0, 10.4],
+)
+
+doc.add_heading('13.3  关键决策记录（ADR）', level=2)
+add_table(
+    doc,
+    ['编号', '决策', '结论', '理由'],
+    [
+        ('ADR-01', 'IMU 选型', 'HWT101（单轴 Z）', '只需 yaw；1.8–2 °/h；磁在车上不可靠；180 元保进度'),
+        ('ADR-02', 'IMU 接口', 'UART 3.3 V TTL（USB-TTL 转接）', 'I2C-1 已被底盘占用；UART 独立、生态成熟、电平可控'),
+        ('ADR-03', 'HWT101 配置', 'UART 115200，输出改 100 Hz', '默认 10 Hz 达不到契约；100 Hz 足够 EKF'),
+        ('ADR-04', '复用边界', 'ICM-42688 可下放到车上，HWT101 不能上飞机', '前者 6 轴 SPI 可自研融合；后者单轴、500 Hz、无气压/磁'),
+    ],
+    widths=[1.6, 3.6, 5.4, 5.8],
+)
+
+doc.save(OUT)
+print('SAVED', OUT)
+print('SIZE', os.path.getsize(OUT))
+
+
+
+
+
+
+
+
+
+

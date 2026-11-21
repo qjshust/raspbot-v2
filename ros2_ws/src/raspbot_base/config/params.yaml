@@ -1,0 +1,24 @@
+raspbot_base:
+  ros__parameters:
+    # velocity limits (m/s, rad/s)
+    max_linear: 0.30
+    max_angular: 1.50
+    # mecanum geometry factor, metres. calibrate: command 0.5 rad/s for 4 s
+    k_geom: 0.1245
+    # PWM per m/s; calibrate on blocks
+    pwm_per_mps: 700.0
+    max_pwm: 255
+    deadband_pwm: 25
+    # per-wheel sign, order L1 L2 R1 R2
+    wheel_signs: [1, 1, 1, 1]
+    control_rate: 30.0
+    sensor_rate: 5.0
+    cmd_timeout: 0.5
+    # CONTRACTS v1.2: A consumes the limited topic produced by E
+    cmd_vel_topic: cmd_vel_safe
+    # FR-A-06: re-send the four wheel PWMs at least this often (s)
+    cmd_resend_interval: 1.0
+    # self-diagnostics rate on /diagnostics (Hz)
+    diag_rate: 1.0
+    odom_frame: odom
+    base_frame: base_link

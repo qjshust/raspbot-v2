@@ -1,0 +1,31 @@
+# 后向立柱遮挡滤除（裁决 J-08：后向 ±12° 立柱盲区 → 切除角取 ≥15°）
+#
+# 策略：保留前向 ±165°（共 330°），把后向 ±15° 扇区内的点置为 range_max
+#       （自由空间语义，不进代价地图；验收看 /scan 正前方 180° 无固定短射线）。
+# 采用非 InPlace 版本 laser_filters/LaserScanAngularBoundsFilter（输出独立消息）。
+#
+# 参数键格式验证（Pi 只读取证，laser_filters 2.3.2 新版“命名对象”格式）：
+#   /opt/ros/lyrical/share/laser_filters/examples/angular_filter_example.yaml:
+#       scan_to_scan_filter_chain:
+#         ros__parameters:
+#           filter1:
+#             name: angle
+#             type: laser_filters/LaserScanAngularBoundsFilter
+#             params:
+#               lower_angle: -1.52
+#               upper_angle: 1.52
+#   插件注册名见 /opt/ros/lyrical/share/laser_filters/laser_filters_plugins.xml
+#   （laser_filters/LaserScanAngularBoundsFilter → laser_filters::LaserScanAngularBoundsFilter）
+#
+# 注意：本链假设 scan 角 0 = 车头正前方（装车朝向已由硬件报告 §5.1 / 测试方案
+#       CAR-B13 验证：正前方 180° 无固定短射线、后向 ±12° 短射线存在）。
+#       若机械外参增加 yaw（TF 标定 CAR-C05），先完成 TF 标定再改本文件角度。
+scan_to_scan_filter_chain:
+  ros__parameters:
+    filter1:
+      name: rear_column_cut
+      type: laser_filters/LaserScanAngularBoundsFilter
+      params:
+        # 精确 ±165°（任务书 -2.88/2.88 rad 的精确值，保证切除角精确 ≥15°）
+        lower_angle: -2.8797932657906435
+        upper_angle: 2.8797932657906435

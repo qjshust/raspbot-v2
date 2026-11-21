@@ -1,0 +1,111 @@
+--- page 1 ---
+机器人信息发布  
+1 、程序功能说明  
+小车启动底盘驱动之后，会发布超声波、四路巡线等传感器模块数据，可以在 docker 中，运行命令去查
+询这些信息，也可以发布速度、蜂鸣器、 RGB 灯条等传感器的控制数据。
+2 、查询小车信息  
+2.1 、进入小车 docker  
+打开一个终端输入以下指令进入 docker ，
+出现以下界面就是进入 docker 成功，现在即可通过指令控制小车，
+ 
+启动底盘驱动，后如下图所示 ,
+再新开一个终端，进入同一个 docker ，以下的  da8c4f47020a 修改成实际终端显示的 ID
+输入以下指令查询节点，
+ 
+然后输入以下指令查询该节点发布 / 订阅了哪些话题，./docker_ros2.sh
+ros2 launch yahboomcar_bringup bringup.launch.py
+docker ps
+docker exec -it da8c4f47020a   /bin/bash
+ros2 node list
+ros2 node info /driver_node
+--- page 2 ---
+可以看出订阅的话题有，
+/buzzer ：蜂鸣器控制
+/cmd_vel ：小车速度控制
+/rgblight ： RGB 灯条控制
+/servo ： s1 舵机云台控制， s2 舵机云台控制
+发布的话题有，
+/ultrasonic ：超声波模块数据
+/line_sensor ：四路巡线模块数据
+我们也可以通过查询话题命令，终端输入，
+ 
+2.3 、查询话题数据  
+查询超声波数据，ros2 topic list
+ros2 topic echo /ultrasonic
+--- page 3 ---
+查询四路巡线模块数据，
+ 
+3 、发布小车控制信息  
+3.1 、控制蜂鸣器  
+首先查询以下蜂鸣器话题的相关信息，终端输入，ros2 topic echo /line_sensor
+ros2 topic info /buzzer
+--- page 4 ---
+得知数据类型是 std_msgs/msg/Bool 。然后输入以下指令打开蜂鸣器，终端输入，
+ 
+输入以下指令关闭蜂鸣器，终端输入，
+ 
+3.2 、发布速度控制信息  
+我们假设发布小车以线速度 0.1 的速度，终端输入，
+停车则输入，
+3.3 、控制 RGB 灯条  
+我们假设发布 RGB 值 255,0,0 ，终端输入
+关灯则输入ros2 topic pub /buzzer std_msgs/msg/Bool "data: 1"
+ros2 topic pub /buzzer std_msgs/msg/Bool "data: 0"
+#有效值范围
+#linear：    x[-1,1] y[-1,1] z
+#angular：   x       y       z[-3,3]
+ros2 topic pub -1 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1, y: 0.0, z: 
+0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+ros2 topic pub -1 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 
+0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+ros2 topic pub -1 /rgblight std_msgs/msg/Int32MultiArray "data: [255, 0, 0]" 
+ros2 topic pub -1 /rgblight std_msgs/msg/Int32MultiArray "data: [0, 0, 0]"
+--- page 5 ---
+3.4 、控制云台舵机  
+这里需要注意的是 s1 舵机的范围是 [0,180] ， s2 舵机的范围是 [0,110] ，超过范围的值，舵机不转动。
+我们假设控制 s1 舵机转动到  90 度， s2 舵机转动到  25 度，则终端输入，
+3.5 、完整底盘驱动  
+3.5.1 、启动程序  
+启动底盘驱动，后如下图所示 ,
+终端输入以下指令查询节点，
+ 
+输入以下指令，查看节点间的通讯图，
+输入命令查看节点的相关信息ros2 topic pub -1 /servo yahboomcar_msgs/msg/ServoControl "{'servo_s1': 90, 
+'servo_s2': 25}"
+ros2 launch yahboomcar_bringup yahboomcar_bringup.launch.py
+ros2 node list
+ros2 run rqt_graph rqt_graph
+ros2 node info /driver_node
+--- page 6 ---
+3.5.2 、解析 launch 文件  
+from ament_index_python.packages import get_package_share_path
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions import Command, LaunchConfiguration
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+import os
+from ament_index_python.packages import get_package_share_directory
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+def generate_launch_description():
+    # 配置参数
+    description_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([os.path.join(
+        get_package_share_directory('yahboomcar_description'), 'launch'),
+         '/description_launch.py'])
+    )  
+    driver_node = Node(
+        package='yahboomcar_bringup',
+        executable='Mcnamu_driver',
+    )
+    # 返回 LaunchDescription 对象
+    return LaunchDescription([
+--- page 7 ---
+该 launch 文件启动了以下几个节点：
+driver_node ：底盘驱动数据节点；
+description_launch ：加载 URDF 模型。
+         driver_node,
+        description_launch
+    ])

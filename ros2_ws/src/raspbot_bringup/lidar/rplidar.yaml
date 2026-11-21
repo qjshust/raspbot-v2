@@ -1,0 +1,49 @@
+# rplidar_node 参数（rplidar_ros 2.1.4，源码构建于 Pi ~/ros2_ws；裁决 J-02）
+#
+# 参数名验证（Pi 只读取证）：
+#   - 二进制 strings ~/ros2_ws/install/rplidar_ros/lib/rplidar_ros/rplidar_node 含
+#     channel_type / serial_port / serial_baudrate / frame_id / inverted /
+#     angle_compensate / scan_mode / flip_x_axis / scan_frequency / auto_standby
+#     （以及 tcp_ip/tcp_port/udp_ip/udp_port，非本车使用）
+#   - 官方示例 ~/ros2_ws/install/rplidar_ros/share/rplidar_ros/launch/rplidar_c1_launch.py
+#     使用同名参数（serial_baudrate 默认 460800）
+# 实测基线（docs/硬件全面测试报告_2026-11-19.md §5.1、tools/slam/smoke_slam.sh）：
+#   DenseBoost / 460800 8N1 / angle_compensate=true → /scan 10.0 Hz、
+#   720 点/圈（有效 661，91.8%）、0.18~2.76 m、frame_id=laser、health=0
+rplidar_node:
+  ros__parameters:
+    # ---- 通道 ----
+    channel_type: serial               # serial|udp|tcp；本车 USB-CP2102N 转接，固定 serial
+    serial_port: /dev/raspbot_lidar    # udev 固定命名（FR-C-02），禁止写 /dev/ttyUSB*
+    serial_baudrate: 460800            # C1 出厂 460800 8N1（硬件报告 §5.1）
+
+    # ---- 帧 ----
+    frame_id: laser                    # 裁决 J-01：契约 TF 树为 base_link->laser；
+                                       #   /scan.frame_id 必须为 laser，绝不允许 laser_link
+    inverted: false                    # 电机正转，实测无需翻转
+    flip_x_axis: false                 # ROS +x 为车前方，无需镜像
+    angle_compensate: true             # C1 固件角度补偿（实测基线必需项）
+
+    # ---- 扫描模式 ----
+    scan_mode: DenseBoost              # 5 kHz 采样 / 10.0 Hz / max 15 m（硬件报告基线）
+    # 注意：
+    #   - scan_frequency（S2E 等型号的参数）对 C1 串口模式无效，勿设；
+    #     10 Hz 由 scan_mode 决定（DenseBoost 实测 9.97~10.01 Hz）。
+    #   - auto_standby（默认 true，电机低速待机）保持默认。
+
+# ---------------------------------------------------------------------------
+# FR-C-04 量程模板（占位做法，P2）：
+#   本文件 = 室内模板。户外模板按以下步骤加，不改 launch、不改代码：
+#   1. 复制本文件为 lidar_outdoor.yaml 并调整（户外模板建议值）：
+#        - scan_mode: DenseBoost
+#          （保持；C1 可选 Boost（采样密度低）/DenseBoost，日光下不建议降密度）
+#        - 量程收缩建议放在建图参数侧（WP-F 的 slam_params.yaml，日光下 C1 有效
+#          量程 6~8 m，见测试方案 §4.2 雷达行）：
+#              min_laser_range: 0.2 -> 0.35   # 抑制近距离日光/地面噪点
+#              max_laser_range: 12.0 -> 8.0
+#        - 若后续在本包加距离滤波，可在 rear_filter.yaml 链上追加
+#          laser_filters/LaserScanRangeFilter 作为 filter2（参数键格式见该文件注释）。
+#   2. 启动切换（launch 层参数覆盖，验收口径 SW-G09/SYS-M06）：
+#        ros2 launch raspbot_bringup lidar.launch.py \
+#            lidar_params_file:=<share>/raspbot_bringup/lidar/lidar_outdoor.yaml
+# ---------------------------------------------------------------------------

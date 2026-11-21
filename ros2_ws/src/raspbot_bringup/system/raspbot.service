@@ -1,0 +1,22 @@
+# RASPBOT-V2 一键 bringup（FR-H-01 / SYS-F01 / SYS-R03）
+# 模板来源：设计文档 §7.5；部署方式见 system/install_systemd.sh 与 system/README.md。
+#
+# - ROS_LOG_DIR=/mnt/ssd/roslog（设计 §5.4.2，降低 SD 写入）。
+#   /mnt/ssd 不可用时（fstab nofail、ExecStartPre 的 mkdir 失败被忽略）systemd
+#   仍会正常启动服务：rcl 日志自动回退到 ~/.ros/log，不影响运行。
+# - 崩溃后 Restart=always 5 s 内重启（设计 §7.4 节点崩溃 → H systemd）。
+[Unit]
+Description=RASPBOT-V2 bringup (base + fusion + safety + navigation)
+After=network.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Environment=ROS_LOG_DIR=/mnt/ssd/roslog
+ExecStartPre=/bin/bash -lc 'mkdir -p /mnt/ssd/roslog 2>/dev/null || true'
+ExecStart=/bin/bash -lc 'source /opt/ros/lyrical/setup.bash && source /home/ubuntu/ros2_ws/install/setup.bash && exec ros2 launch raspbot_bringup bringup.launch.py mode:=nav'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

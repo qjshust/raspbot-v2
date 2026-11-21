@@ -1,0 +1,47 @@
+﻿# RASPBOT-V2 IMU 参数（当前硬件：维特智能 HWT101，串口）
+# 用法：ros2 launch raspbot_imu imu.launch.py
+#      或 ros2 run raspbot_imu imu_node --ros-args --params-file <本文件>
+imu_node:
+  ros__parameters:
+    # ---------- 数据源 ----------
+    # witmotion：维特智能串口模块（HWT101 / JY901，模块自带角度解算）
+    # icm42688：SPI 裸芯片（无人机 IMU 下放，需自己解算姿态）
+    # mock：合成数据，无硬件调试用
+    source: witmotion
+
+    # ---------- 通用 ----------
+    rate_hz: 100.0          # 发布频率
+    mode: yaw               # yaw：只用航向；mahony：6 轴全姿态（会忽略器件角度）
+    frame_id: imu_link
+    calibrate_seconds: 5.0  # 上电静止标定陀螺零偏，0 表示跳过
+    yaw_offset_deg: 0.0     # IMU 安装方向相对车头的偏角（实测后填）
+
+    # ---------- 航向来源 ----------
+    # device：直接用 HWT101 内部卡尔曼融合出来的 Z 轴角度（推荐，0.1°、几乎不漂）
+    # gyro  ：用模块的角速度自己积分（原逻辑，换回 ICM-42688 时用）
+    angle_source: device
+
+    # ---------- SPI（source=icm42688 时才用） ----------
+    spi_bus: 0
+    spi_device: 0
+    spi_speed_hz: 2000000
+    gyro_fs_dps: 500.0      # 量程越大分辨率越粗；地面车 500 足够
+    accel_fs_g: 4.0
+    odr_hz: 1000.0          # 芯片输出速率，节点再降到 rate_hz
+
+    # ---------- 串口（source=witmotion） ----------
+    # HWT101 出厂 115200bps / 10Hz：波特率不用改，用维特上位机把输出速率改成 100Hz
+    # （CT 版供电 5–36V；非 CT 版 3.3–5.5V，建议 3.3V）
+    serial_port: /dev/raspbot_imu
+    baud: 115200
+
+    # ---------- Mahony（mode=mahony） ----------
+    mahony_kp: 0.8
+    mahony_ki: 0.02
+
+    # ---------- 协方差（robot_localization 用） ----------
+    orientation_yaw_variance: 0.0003      # HWT101 航向 0.1°，比积分方案小一个量级
+    orientation_tilt_variance: 1.0        # yaw 模式下 roll/pitch 未知，给大值
+    angular_velocity_variance: 0.0004
+    linear_acceleration_variance: 0.04
+

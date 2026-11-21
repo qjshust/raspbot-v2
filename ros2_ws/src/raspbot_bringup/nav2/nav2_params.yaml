@@ -1,0 +1,430 @@
+# ==============================================================================
+# RASPBOT-V2 导航参数（WP-G）
+# 文件：raspbot_bringup/nav2/nav2_params.yaml（契约 CONTRACTS §4 指定路径）
+# 基线：/opt/ros/lyrical/share/nav2_bringup/params/nav2_params.yaml
+#       （Nav2 1.5.2-2resolute，2026-09-21 构建，已核实版本）
+# 用途：仅 WP-G 的 Nav2 节点（controller/planner/behavior/bt_navigator/
+#       collision_monitor + 两个代价地图）。
+# 注意：
+#   - 不含 amcl / map_server 段（归 F 的 launch 管理）；/map 由 F 提供。
+#   - velocity_smoother / smoother_server / route_server / waypoint_follower /
+#     docking / following 不启用：不配段、不进 lifecycle_manager 的 node_names。
+#     （1.5.2 中 controller_server 经 FollowPath action 直接收路径，
+#       默认行为树 navigate_to_pose_w_replanning_and_recovery.xml 不含 smoother，
+#       已核实：/opt/ros/lyrical/share/nav2_bt_navigator/behavior_trees/ 中该 XML 无 smooth 引用）
+#   - use_sim_time 由 launch 传入（默认 false），不在本文件设置。
+#   - 结构（含 local_costmap/global_costmap 的双层嵌套）与官方 1.5.2 完全一致，
+#     代价地图是 controller/planner 进程内的子生命周期节点
+#     （命名空间 <namespace>/local_costmap、/global_costmap）。
+# ==============================================================================
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: odom            # → /odom（契约：E 的 EKF 输出）
+    bt_loop_duration: 10
+    filter_duration: 0.3
+    default_server_timeout: 20
+    default_cancel_timeout: 50
+    # BT action 节点等待 action server 的窗口（ms）。集成实测：默认 1000 ms 在
+    # 高负载下（DDS 发现慢）反复导致 bt_navigator 激活失败
+    # （"action server not available after waiting for 1.00s"），放宽到 10 s。
+    wait_for_service_timeout: 10000
+    introspection_mode: "disabled"
+    # 官方默认行为树。注意：Nav2 1.5.2 的 bt_navigator 对裸文件名会按 XML 内容
+    # 解析并启动失败（Could not parse / Failed to extract ID / 目标被拒），
+    # 必须使用 $(find-pkg-share nav2_bt_navigator)/behavior_trees/ 全路径
+    #（$(find-pkg-share) 由 bt_navigator 内部解析）。集成实测确认，勿改回裸文件名。
+    default_nav_to_pose_bt_xml: "$(find-pkg-share nav2_bt_navigator)/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
+    default_nav_through_poses_bt_xml: "$(find-pkg-share nav2_bt_navigator)/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+      enable_groot_monitoring: false
+      groot_server_port: 1667
+      search_window: 2.0
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+      enable_groot_monitoring: false
+      groot_server_port: 1669
+      search_window: 2.0
+    bt_search_directories:
+      - $(find-pkg-share nav2_bt_navigator)/behavior_trees
+    # plugin_lib_names 按官方：内置 BT 插件自动加载，自定义插件才需要（保持注释）
+    # plugin_lib_names: []
+    error_code_name_prefixes:
+      - assisted_teleop
+      - backup
+      - compute_path
+      - dock_robot
+      - drive_on_heading
+      - follow_object
+      - follow_path
+      - nav_thru_poses
+      - nav_to_pose
+      - route
+      - spin
+      - smoother
+      - undock_robot
+      - wait
+
+controller_server:
+  ros__parameters:
+    # Nav2 1.5.2 的 cmd 输出默认 TwistStamped（参数 enable_stamped_cmd_vel 默认 true，
+    # 见 nav2_util/twist_publisher.hpp；注意**不是** use_stamped——那是 twist_mux 的参数名，
+    # nav2 的键名已核实：libcontroller_server_core.so strings 只有 enable_stamped_cmd_vel）。
+    # 契约订阅方全是 Twist（DDS 类型不匹配 = 消息静默丢弃）。
+    # 集成实测：控制器 20 Hz "Publishing velocity" 但所有 Twist 订阅者收不到；
+    # ros2 topic info -v 显示该发布者 Topic type = TwistStamped。必须显式 false。
+    enable_stamped_cmd_vel: false
+    controller_frequency: 20.0        # J-06：Nav2 控制器 20 Hz（NFR-01）
+    costmap_update_timeout: 0.30      # 官方默认；local 代价图 5 Hz 允许漏 1 周期
+    min_x_velocity_threshold: 0.001
+    # 官方默认 0.5 是差速车的噪声门限（差速车 vy≈0）；MPPI-Omni 需要真实的 vy
+    # 反馈参与加速度钳制，否则 /odom 的 vy 被清零 → 横移输出被钳在 ~0.03 m/s
+    #（与 x/theta 同样取 0.001，仅在 Omni 配置下生效意义）
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    odom_topic: "odom"                # → /odom（E 的 EKF，30 Hz）
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    path_handler_plugins: ["PathHandler"]
+    use_realtime_priority: false
+    speed_limit_topic: "speed_limit"
+
+    # 进度检查器（官方默认值）
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+    # 目标检查器：xy 0.15 m / yaw 0.3 rad（任务指定，覆盖官方 0.25/0.25）
+    general_goal_checker:
+      stateful: true
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.15
+      yaw_goal_tolerance: 0.3
+      path_length_tolerance: 1.0
+    PathHandler:
+      plugin: "nav2_controller::FeasiblePathHandler"
+      prune_distance: 0.5   # 官方 1.5/2.0 会吃掉短路径：本车低速(≤0.3 m/s)，
+                            # 目标常 <1 m，prune 2.0 会把整条路径剪空 → 控制器零速
+                            # （集成实测：0.6 m 目标下 DWB/MPPI 均输出零、Failed to make progress）
+      enforce_path_inversion: false    # 麦轮可倒车，不强制路径反转
+      enforce_path_rotation: false
+      inversion_xy_tolerance: 0.2
+      inversion_yaw_tolerance: 0.4
+      minimum_rotation_angle: 0.785
+      reject_unit_path: false
+
+    # ----------------------------------------------------------------------
+    # MPPI 局部控制器（nav2_mppi_controller::MPPIController，Nav2 1.5.2 官方默认）
+    # 弃 DWB 原因（集成实测）：DWB 在本车只加载 3/7 个 critics、输出恒为零速
+    # （"Failed to make progress"）；官方默认控制器即 MPPI，且 MPPI 的 Omni
+    # 运动模型与四轮麦轮车匹配（直接输出 vy 横移分量）。
+    # 基线：官方 nav2_params.yaml FollowPath 段全量照抄（critics 全套一个不少，
+    # 缺一个 critic 参数就会静默少加载一个——DWB 的教训），再按本车适配：
+    #   - motion_model: "Omni"；块名必须与 motion_model 值完全一致
+    #     （optimizer.cpp: plugin_ns = name + "." + motion_model_name）。
+    #     插件 mppi::OmniMotionModel 已核实：libmppi_motion_models.so strings。
+    #   - vx_max 0.25 / vx_min -0.15 / vy_max 0.25 / wz_max 1.0（J-06、限速）。
+    #     注意 1.5.2 **没有 vy_min 键**：vy 按 ±vy_max 对称约束
+    #     （optimizer.cpp 实测 clamp(-vy, vy)），vy_max=0.25 即横移 ±0.25。
+    #   - ax/ay ±0.6、az_max 2.0（与 E 的 limiter 一致）。
+    #   - batch_size 500（Pi 4 核降载）、time_steps 40（0.05 s × 40 = 2.0 s 时域）。
+    #   - model_dt 必须 ≥ 控制周期（controller_frequency 20 Hz → 周期 0.05 s；
+    #     optimizer.cpp 实测 controller_period > model_dt 时抛 ControllerException）。
+    #     model_dt=0.05 与周期相等 → 控制序列平移开启（shift_control_sequence）。
+    #   - PreferForwardCritic enabled: false（麦轮可倒车/横移，无需前向偏好）。
+    # ----------------------------------------------------------------------
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 40          # 官方 56；0.05 s × 40 = 2.0 s 时域
+      model_dt: 0.05          # 必须 == 控制周期（20 Hz），官方值
+      model_delay_vx: 0.0
+      model_delay_vy: 0.0
+      model_delay_wz: 0.0
+      batch_size: 500         # 官方 2000；Pi 4 核降载
+      open_loop: false
+      ax_max: 0.6             # 官方 3.0；与 E 的 limiter 一致
+      ax_min: -0.6
+      ay_max: 0.6
+      ay_min: -0.6
+      az_max: 2.0             # 官方 3.5；与 E 的 limiter 一致
+      vx_std: 0.2
+      vy_std: 0.2
+      wz_std: 0.4
+      vx_max: 0.25            # 官方 0.5；实车限速 ≤0.30 m/s
+      vx_min: -0.15           # 官方 -0.35；任务指定
+      vy_max: 0.25            # 官方 0.5；任务指定（对称 ±0.25）
+      wz_max: 1.0             # 官方 1.9；J-06
+      iteration_count: 1
+      temperature: 0.3
+      gamma: 0.015
+      visualize: true
+      publish_optimal_trajectory: true
+      regenerate_noises: true
+      motion_model: "Omni"
+      Omni:
+        plugin: "mppi::OmniMotionModel"
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+      TrajectoryValidator:
+        # The validator can be configured with additional parameters if needed.
+        plugin: "mppi::DefaultOptimalTrajectoryValidator"
+        collision_lookahead_time: 2.0  # Time to look ahead to check for collisions
+        consider_footprint: false  # Whether to consider the full robot's footprint (or circle) in trajectory validation collision checks
+      critics:
+        [
+          "ConstraintCritic",
+          "CostCritic",
+          "GoalCritic",
+          "GoalAngleCritic",
+          "PathAlignCritic",
+          "PathFollowCritic",
+          "PathAngleCritic",
+          "PreferForwardCritic",
+        ]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: false   # 麦轮：不偏好前向（可倒车/横移）
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        near_collision_cost: 253
+        critical_cost: 300.0
+        consider_footprint: false
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        mode: 0
+      # TwirlingCritic（与官方一致默认注释）：
+      #   enabled: true
+      #   twirling_cost_power: 1
+      #   twirling_cost_weight: 10.0
+
+planner_server:
+  ros__parameters:
+    allow_partial_planning: false
+    expected_planner_frequency: 20.0
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 1.0
+    introspection_mode: "disabled"
+    GridBased:
+      # Nav2 1.5.2 官方默认即 NavFn（未选 Smac：20 m² 小场景，NavFn CPU 占用低，
+      # 且全局代价图分辨率 0.05 m 下 NavFn 精度足够；Smac Hybrid-A* 对麦轮全向
+      # 收益有限、CPU 开销更大，故保留官方默认 NavFn 并收紧参数）
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false
+      max_cycles_factor: 4
+      allow_unknown: false                 # 任务指定：未知视为不可行（地图由 F 提供）
+      use_final_approach_orientation: false  # 任务指定：不强制终点朝向
+
+behavior_server:
+  ros__parameters:
+    # 与 controller_server 相同：恢复行为（spin/backup/wait）经 nav2_util::TwistPublisher
+    # 发布 cmd_vel（timed_behavior.hpp 实测），参数同为 enable_stamped_cmd_vel 默认 true
+    # → 输出 TwistStamped；契约订阅方是 Twist，必须显式 false。
+    enable_stamped_cmd_vel: false
+    # 1.5.2 官方名 behavior_server（任务书中的 recoveries_server 为旧版名）
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 20.0    # 任务要求 20 Hz（官方默认 10.0）
+    behavior_plugins: ["spin", "backup", "wait"]
+    # 官方列表还含 drive_on_heading / assisted_teleop；默认行为树只用
+    # Spin/BackUp/Wait 三种恢复，故不加载多余插件
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+      acceleration_limit: 2.5
+      deceleration_limit: -2.5
+      minimum_speed: 0.10
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0     # 官方默认 5.0 Hz（任务书"update 5 s"按 5 Hz 理解）
+      publish_frequency: 2.0
+      global_frame: odom        # 局部代价图在 odom 系（官方默认）
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 4                  # 4.0 m（任务指定；官方默认 3）
+      height: 4                 # 4.0 m
+      resolution: 0.05          # J-11：地图 0.05 m
+      # J-05 足印：238×180 mm 外廓（含前伸），x 前向；不用 robot_radius
+      footprint: "[[0.119, 0.09], [0.119, -0.09], [-0.119, -0.09], [-0.119, 0.09]]"
+      transform_tolerance: 0.3  # 官方代价图默认值（controller 引用该值）
+      initial_transform_timeout: 60.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          # 绝对话题名（契约 /scan，C 提供；10 Hz，360° 已切后向 ±15°）
+          topic: /scan
+          sensor_frame: laser     # J-01：/scan.frame_id = laser
+          data_type: "LaserScan"
+          clearing: true
+          marking: true
+          min_obstacle_height: 0.05
+          max_obstacle_height: 0.3
+          # 1.5.2 键名为 obstacle_max_range / raytrace_max_range
+          # （旧键 obstacle_range / raytrace_range 已不存在，任务值 2.5/3.0）
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.30    # FR-G-02/SYS-N03：障碍前 0.3 m 停车
+        cost_scaling_factor: 2.0  # 代价随距离衰减陡（离障碍越近代价越高）
+      always_send_full_costmap: true
+      introspection_mode: "disabled"
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0     # 官方默认 1 Hz（J-11：map_update_interval 1.0 s）
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05          # J-11
+      track_unknown_space: false  # 任务指定：未知=自由（地图由 F 提供）
+      footprint: "[[0.119, 0.09], [0.119, -0.09], [-0.119, -0.09], [-0.119, 0.09]]"  # J-05
+      transform_tolerance: 0.3
+      initial_transform_timeout: 60.0
+      plugins: ["static_layer", "inflation_layer"]   # 任务指定：全局不放障碍层
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        # map 话题默认 "map"，经父命名空间解析为 /map（F 发布，Transient Local）
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.30
+        cost_scaling_factor: 2.0
+      always_send_full_costmap: true
+      introspection_mode: "disabled"
+
+# ==============================================================================
+# collision_monitor（Nav2 1.5.2 官方结构，独立命名空间段）
+# 键名核实（1.5.2 源码 collision_monitor_node.cpp / polygon.cpp / source.cpp / scan.cpp）：
+#   - 1.5.2 **没有** scan source 级 stop_distance / slowdown_distance / action_type /
+#     min_points；距离判定全部由 Polygon（多边形几何 + min_points）实现。
+#   - Polygon 键：type、points、action_type(stop|slowdown|limit|approach|none)、
+#     enabled、min_points(默认4)、trigger_consecutive_points、release_consecutive_points、
+#     slowdown_ratio(slowdown 用)、visualize、polygon_pub_topic。
+#   - 1.5.2 **没有** polygon 级 timeout 键（旧版结构）；"超时"概念对应
+#     source_timeout（数据超时 1.0 s → 强制 STOP）与 stop_pub_timeout（触发清除后
+#     继续发布零速的时长 2.0 s）。
+#   - scan source 只有 type/topic/enabled/(可选 source_timeout)：
+#     scan.cpp 注释 "Laser scanner has no own parameters"；官方 yaml 中 scan 段的
+#     min_height/max_height 仅对 pointcloud 源有效，对 LaserScan 不生效（不配置）。
+# 距离换算（J-05，停车距离从最前缘起算；车头前缘在 base 原点 +0.119 m）：
+#   - PolygonSlow 前边界 0.72 m → 距最前缘 0.60 m 触发降速（slowdown_ratio 0.2：
+#     0.25 m/s → 0.05 m/s）。
+#   - PolygonStop 前边界 0.42 m → 距最前缘 0.30 m 触发急停（FR-G-02 兜底冗余）。
+# 命令链：controller/behavior_server --cmd_vel_nav_raw--> collision_monitor
+#         --cmd_vel_nav--> twist_mux(H)。/cmd_vel_nav 单发布者 = collision_monitor。
+# ==============================================================================
+collision_monitor:
+  ros__parameters:
+    enabled: true
+    base_frame_id: "base_link"    # 任务指定（官方默认 base_footprint）
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_nav_raw"   # controller/behavior 的未过滤输出
+    cmd_vel_out_topic: "cmd_vel_nav"      # 契约：Nav2 最终输出 → twist_mux
+    # 输出类型防御：collision_monitor 的输出同样经 nav2_util::TwistPublisher
+    # （参数 enable_stamped_cmd_vel，libcollision_monitor_core.so strings 已核实），
+    # 显式 false 保证输出 Twist（twist_mux 订阅 Twist，避免静默丢弃）。
+    enable_stamped_cmd_vel: false
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.5      # 任务指定
+    source_timeout: 1.0           # 任务指定：/scan 断流 1 s → 强制 STOP（SYS-S04 兜底）
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["PolygonSlow", "PolygonStop"]
+    PolygonSlow:
+      type: "polygon"
+      points: "[[0.72, 0.25], [0.72, -0.25], [-0.15, -0.25], [-0.15, 0.25]]"
+      action_type: "slowdown"
+      min_points: 4
+      trigger_consecutive_points: 1
+      release_consecutive_points: 1
+      slowdown_ratio: 0.2         # 任务指定
+      visualize: true
+      polygon_pub_topic: "polygon_slowdown"
+      enabled: true
+    PolygonStop:
+      type: "polygon"
+      points: "[[0.42, 0.15], [0.42, -0.15], [-0.15, -0.15], [-0.15, 0.15]]"
+      action_type: "stop"
+      min_points: 4
+      trigger_consecutive_points: 1
+      release_consecutive_points: 1
+      visualize: true
+      polygon_pub_topic: "polygon_stop"
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/scan"             # 契约（C 提供）
+      enabled: true
+      # 1.5.2 LaserScan 源无高度过滤键（min_height/max_height 只对 pointcloud 生效，
+      # 官方 yaml 中虽有此项但对 scan 无效），故不配置

@@ -1,0 +1,22 @@
+# RASPBOT-V2 twist_mux 输入话题配置（WP-H，FR-H-06）
+# 结构对齐 /opt/ros/lyrical/share/twist_mux/config/twist_mux_topics.yaml：
+#   name: topic（相对名）/ timeout（超时停用）/ priority（越大越优先）
+# 输出话题由 twist_mux.launch.py remap /cmd_vel_out -> /cmd_vel。
+# 同一时刻只有一个速度源生效：遥控（teleop）优先于导航（nav），
+# 遥控停止发布 0.5 s 后自动让出，Nav2 恢复控制。
+twist_mux:
+  ros__parameters:
+    # twist_mux 4.5.1 默认 use_stamped=true（期望 TwistStamped）；
+    # 本系统契约是 geometry_msgs/Twist，必须显式关掉。
+    use_stamped: false
+    topics:
+      cmd_vel_nav:
+        topic: cmd_vel_nav
+        timeout: 0.5
+        priority: 10
+      cmd_vel_teleop:
+        topic: cmd_vel_teleop
+        timeout: 0.5
+        priority: 50
+    # 不声明 locks：twist_mux 4.5.1 不接受空 locks: {}（parameter 结构无值会崩溃），
+    # 省略即用默认空锁表。急停走 /estop → E 的 cmd_vel_limiter 锁停，不经 twist_mux。

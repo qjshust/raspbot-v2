@@ -1,0 +1,34 @@
+# raspbot_mock 默认参数（mock 三件套）
+# 用法：ros2 launch raspbot_mock mock.launch.py
+#      或 ros2 run raspbot_mock fake_base --ros-args --params-file <本文件>
+
+fake_base:
+  ros__parameters:
+    rate: 30.0           # /odom_raw 发布频率（与 raspbot_base control_rate 一致）
+    noise: 0.0           # 发布位姿 x/y/theta 的高斯噪声（m / rad）
+    publish_tf: false    # 默认不发布 TF（odom->base_link 属 E）；仅独立测试可开
+    cmd_timeout: 0.5     # 无指令超时（s），与 raspbot_base 一致
+    odom_frame: odom
+    base_frame: base_link
+
+fake_imu:
+  ros__parameters:
+    rate: 100.0          # /imu/data 发布频率（契约 100 Hz）
+    noise: 0.0           # yaw 高斯噪声（rad）
+    yaw_rate_deg_s: 0.0  # 恒定转向速率（°/s）；0 = 静止指向 0
+    frame_id: imu_link
+    yaw_variance: 0.0025
+    tilt_variance: 1.0
+    gyro_variance: 0.0004
+    accel_variance: 0.04
+
+fake_scan:
+  ros__parameters:
+    rate: 10.0           # /scan 发布频率（契约 10 Hz）
+    room_x: 5.0          # 合成房间尺寸（m），车位于 (0,0)
+    room_y: 4.0
+    noise: 0.002         # 距离高斯噪声（m）
+    frame_id: laser
+    range_min: 0.2
+    range_max: 15.0
+    num_points: 720      # 360° / 0.5°

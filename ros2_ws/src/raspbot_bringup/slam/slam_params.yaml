@@ -1,0 +1,93 @@
+# RASPBOT-V2 · WP-F · slam_toolbox 正式参数（mapping 模式）
+#
+# 来源：tools/slam/slam_params_smoke.yaml（2026-11-20 首次冒烟实测通过），
+#       其又派生自 /opt/ros/lyrical/share/slam_toolbox/config/mapper_params_online_async.yaml。
+# 与冒烟基线相比仅补充文件头与 use_sim_time 显式声明，参数值全部保持一致：
+#   1) base_frame: base_footprint -> base_link   （本项目 TF 契约用 base_link，否则
+#      "Failed to compute odom pose" 刷屏且 /map 无发布者——冒烟报告坑 #1）
+#   2) min/max_laser_range 0.2 / 15.0             （对齐 RPLIDAR C1 实际量程，否则启动即
+#      两条 WARN——冒烟报告坑 #4）
+#   3) minimum_travel_distance/heading 0.2 / 0.2  （配合 0.12~0.15 m/s 低速建图，默认 0.5 太粗）
+#   4) resolution: 0.05、map_update_interval: 1.0  （裁决 J-11：地图分辨率 0.05 m、
+#      map_update_interval 1.0 s，导航验收沿用）
+#   5) mode: mapping                               （定位用 AMCL，见同目录 amcl.yaml）
+#
+# 用法（必须经 launch，slam_toolbox 是 lifecycle 节点；launch 参数名是 slam_params_file，
+#      写 params_file 会被 online_async_launch.py 静默忽略——冒烟报告坑 #2/#3）：
+#   ros2 launch raspbot_bringup slam.launch.py
+#   ros2 launch slam_toolbox online_async_launch.py \
+#       use_sim_time:=false autostart:=true slam_params_file:=<本文件绝对路径>
+slam_toolbox:
+  ros__parameters:
+
+    use_sim_time: false          # 真车
+
+    # Plugin params
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ROS Parameters
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    use_map_saver: true
+    mode: mapping                # mapping | localization
+
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02
+    map_update_interval: 1.0     # J-11
+    resolution: 0.05             # J-11
+    restamp_tf: false
+    min_laser_range: 0.2         # C1 实测最小 0.184 m
+    max_laser_range: 15.0        # C1 驱动上限 15 m（标称 12 m）
+    minimum_time_interval: 0.5
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # General Parameters
+    use_scan_matching: true
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.2     # 默认 0.5 太粗，低速建图会漏帧
+    minimum_travel_heading: 0.2
+    check_min_dist_and_heading_precisely: false
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Correlation Parameters
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Loop Closure Parameters
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan Matcher Parameters
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+    min_pass_through: 2
+    occupancy_threshold: 0.1

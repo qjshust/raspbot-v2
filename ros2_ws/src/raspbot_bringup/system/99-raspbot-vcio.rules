@@ -1,0 +1,8 @@
+# RASPBOT-V2：允许 video 组打开 /dev/vcio，修复 vcgencmd 无 sudo 权限问题（D-09）。
+# 安装（见 system/README.md 或 install_systemd.sh 顶部注释）：
+#   sudo cp system/99-raspbot-vcio.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# 验证：
+#   ls -l /dev/vcio          # 期望 root:video 0660
+#   vcgencmd get_throttled   # 不再 Permission denied（用户需在 video 组）
+KERNEL=="vcio", SUBSYSTEM=="misc", MODE="0660", GROUP="video"

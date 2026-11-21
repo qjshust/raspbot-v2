@@ -1,0 +1,8 @@
+hailo_node:
+  ros__parameters:
+    hef_path: /opt/hailo-models/yolov8s_h8.hef
+    score_threshold: 0.4
+    max_rate: 10.0
+    publish_annotated: true
+    device_timeout: 0
+    fail_fast: true

@@ -1,0 +1,32 @@
+# v4l2_camera_node 参数（v4l2_camera 0.8.1，Pi 上 /opt/ros/lyrical）
+#
+# 参数名验证（Pi 只读取证 + 上游源码交叉）：
+#   - Pi：strings /opt/ros/lyrical/lib/libv4l2_camera.so 含 video_device /
+#     pixel_format / output_encoding / image_size / camera_frame_id /
+#     camera_info_url（无 framerate、无 io_method）
+#   - 上游：boldhearts/ros2_v4l2_camera src/v4l2_camera.cpp 的 declare_parameter
+#     列表与上一致；默认值：video_device=/dev/video0、pixel_format=YUYV、
+#     output_encoding=rgb8、image_size=[640,480]、camera_frame_id=camera
+#
+# 像素格式裁决（2026-11-20 Pi 实测，lead 反馈日志）：
+#   MJPG 不可用 —— v4l2_camera 0.8.1 日志
+#     "Current pixel format is not supported yet: MJPG"，随后空 encoding 导致
+#     cv_bridge::Exception "Unrecognized image encoding []" 崩溃。
+#   → 改用设备原生 YUYV（硬件报告 §5.3 格式表：YUYV 640x480@15），恰好落地
+#     裁决 J-03 的 15 Hz 契约（无需 framerate 参数，设备原生即 15 fps）。
+v4l2_camera:
+  ros__parameters:
+    video_device: /dev/video0        # UVC 0c45:64ab（硬件报告 §5.3）
+    pixel_format: YUYV               # 设备原生支持；640x480 原生 15 fps（= J-03 契约频率）
+    output_encoding: rgb8            # 合法 cv_bridge 编码；YUYV→rgb8 为常规转码路径
+                                     # ⚠ 0.8.1 对不支持的像素格式/空编码会崩溃，
+                                     #    勿设 mjpeg 等未验证编码
+    image_size: [640, 480]           # 契约 FR-D-01；改分辨率必须同步更新 intrinsics.yaml
+                                     # （v4l2_camera 源码 checkCameraInfo：尺寸不匹配会
+                                     #   丢弃整个 CameraInfo，K 矩阵被清空）
+    camera_frame_id: camera_link     # TF 契约 §3 base_link->camera_link；默认值是 camera
+    camera_info_url: package://raspbot_bringup/camera/intrinsics.yaml
+    framerate: 15.0                  # 契约 J-03 / FR-D-01 的 15 Hz 记录值。
+                                     # v4l2_camera 0.8.1 无 framerate 参数：此键为惰性
+                                     # 记录、不生效；实际频率 = 设备原生
+                                     # （YUYV 640x480 ≈ 15 fps，与契约一致）。
