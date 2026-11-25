@@ -1,0 +1,29 @@
+{
+  "maps": [
+    {
+      "name": "room",
+      "path": "/mnt/ssd/maps/room.yaml",
+      "yaml": "/mnt/ssd/maps/room.yaml",
+      "pgm": "/mnt/ssd/maps/room.pgm",
+      "mtime": 1764012000.0,
+      "resolution": 0.05,
+      "width": 240,
+      "height": 160,
+      "preview_url": "/api/maps/room/preview.png",
+      "valid": true
+    },
+    {
+      "name": "broken_map",
+      "path": "/mnt/ssd/maps/broken_map.yaml",
+      "yaml": "/mnt/ssd/maps/broken_map.yaml",
+      "pgm": null,
+      "mtime": 1764011000.0,
+      "resolution": 0.05,
+      "width": 0,
+      "height": 0,
+      "preview_url": "/api/maps/broken_map/preview.png",
+      "valid": false
+    }
+  ],
+  "dirs": ["/mnt/ssd/maps", "/home/ubuntu/ros2_ws/maps"]
+}

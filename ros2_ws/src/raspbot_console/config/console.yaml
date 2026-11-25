@@ -1,0 +1,26 @@
+# raspbot_console 网关默认参数（与 raspbot_console/config.py 的 DEFAULTS 一致）。
+#
+# 本文件由 launch/console.launch.py 读取（share/config/console.yaml），
+# 作为 launch 参数的默认值；也可以命令行/JSON 配置覆盖（优先级：
+# 命令行 > JSON 配置(--config) > console.yaml(仅 launch) > 内置默认值）。
+console_bridge:
+  ros__parameters:
+    # --- 网络 ---
+    host: 0.0.0.0          # 只监听内网；禁止公网端口映射（契约 §9.5）
+    port: 8080
+    token: ""              # 非空时要求 X-Console-Token（GET 可用 ?token=）
+    max_sse: 4             # SSE 客户端上限，超出 503
+    # --- 路径 ---
+    workspace: ~/ros2_ws
+    ros_setup: /opt/ros/lyrical/setup.bash
+    maps_dir: /mnt/ssd/maps
+    maps_fallback: ~/ros2_ws/maps
+    # --- 会话 ---
+    attach: false          # true = 附加到 systemd 已启动的栈（start/stop 409）
+    session_manage: true   # false = 不管理 bringup（等价只读）
+    # --- 速度上限（state.limits，与 base_node 默认参数一致）---
+    max_linear: 0.30
+    max_lateral: 0.30
+    max_angular: 1.5
+    # --- 日志 ---
+    log_level: info        # debug | info | warning | error

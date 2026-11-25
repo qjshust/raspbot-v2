@@ -17,7 +17,9 @@ tools/_pi_usb_state.sh
 .dsh/selftest/**/__pycache__/
 
 # 树莓派厂商工具链/子模块目录（910 MB，仅保留我方脚本镜像 ros2_ws/tools/slam）
-/tools/
+# 只忽略厂商目录本身；tools/console 等我方工具必须入库
+/tools/*
+!/tools/console/
 
 # ROS 2 构建产物
 ros2_ws/build/
@@ -45,6 +47,10 @@ pytest-cache-files-*/
 *.db3
 *.mcap
 data/
+
+# PC 上位机本地运行时数据（用户私有配置、演示地图）
+pc_console/config.json
+pc_console/demo_maps/
 
 # 系统与编辑器
 Thumbs.db

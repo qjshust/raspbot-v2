@@ -1,0 +1,93 @@
+{
+  "api": 1,
+  "server_time": 1764012345.678,
+  "uptime_s": 812.4,
+  "session": {
+    "mode": "nav",
+    "state": "running",
+    "mock": false,
+    "managed": true,
+    "external": false,
+    "available_modes": ["base", "slam", "nav"],
+    "since": 1764011000.0,
+    "progress": 1.0,
+    "message": "导航模式已启动，等待初始位姿",
+    "error": null,
+    "map": "/mnt/ssd/maps/room.yaml"
+  },
+  "ros": {
+    "ok": true,
+    "nodes": 27,
+    "ready": {
+      "base": true,
+      "teleop": true,
+      "map": true,
+      "localization": true,
+      "nav2": false,
+      "diagnostics": true
+    },
+    "rates": {
+      "scan_hz": 10.1,
+      "odom_hz": 30.0,
+      "map_age_s": 0.4,
+      "diagnostics_age_s": 0.7
+    }
+  },
+  "limits": {
+    "max_linear": 0.3,
+    "max_lateral": 0.3,
+    "max_angular": 1.5
+  },
+  "robot": {
+    "frame": "map",
+    "x": 1.23,
+    "y": -0.4,
+    "yaw": 1.57,
+    "stamp": 1764012345.6,
+    "speed": { "vx": 0.12, "vy": 0.0, "wz": 0.0 },
+    "imu": { "yaw_deg": 89.9, "age_s": 0.02 },
+    "scan": { "front_m": 1.35, "min_m": 0.28, "age_s": 0.1 }
+  },
+  "nav": {
+    "state": "goal_active",
+    "message": "前往目的地",
+    "initialpose": { "x": 1.2, "y": -0.4, "yaw": 1.57, "stamp": 1764012200.0 },
+    "goal": { "x": 3.5, "y": 1.2, "yaw": null, "stamp": 1764012300.0, "goal_id": "goal-1" },
+    "goal_state": "active",
+    "distance_remaining": 2.31,
+    "navigation_time_s": 42.5,
+    "recoveries": 1,
+    "lifecycle": { "controller_server": "active", "bt_navigator": "active" },
+    "activation": { "done": 6, "total": 6, "phase": "collision_monitor" }
+  },
+  "map": {
+    "available": true,
+    "version": 12,
+    "width": 240,
+    "height": 160,
+    "resolution": 0.05,
+    "origin": { "x": -2.4, "y": -2.0, "yaw": 0.0 },
+    "frame_id": "map",
+    "stamp": 1764012345.2
+  },
+  "estop": { "active": false, "since": null },
+  "teleop": { "active": false, "vx": 0.0, "vy": 0.0, "wz": 0.0, "last_cmd": null },
+  "peripherals": {
+    "buzzer": false,
+    "led": { "r": 0.13, "g": 0.83, "b": 0.93 },
+    "servo": { "pan": 90.0, "tilt": 45.0 }
+  },
+  "diagnostics": {
+    "level": "ok",
+    "counts": { "ok": 8, "warn": 0, "error": 0 },
+    "items": [
+      { "name": "Raspbot Safety: E-Stop", "level": "ok", "message": "OK", "hardware_id": "estop" },
+      { "name": "raspbot_base", "level": "ok", "message": "30 Hz", "hardware_id": "base" }
+    ],
+    "age_s": 0.6
+  },
+  "logs": [
+    { "ts": 1764012345.1, "level": "info", "msg": "地图已保存: room1" },
+    { "ts": 1764012344.0, "level": "warn", "msg": "激光扫描频率偏低（8 Hz）" }
+  ]
+}

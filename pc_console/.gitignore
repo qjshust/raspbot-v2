@@ -1,0 +1,14 @@
+# 用户私有配置（首次运行由 config.example.json/默认值生成，不提交）
+config.json
+config.*.json
+!config.example.json
+
+# 演示模式运行时生成的地图
+demo_maps/
+
+# 测试临时目录
+_tmp/
+
+# Python 缓存
+__pycache__/
+*.py[cod]

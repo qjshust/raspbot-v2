@@ -1,6 +1,8 @@
 # RASPBOT-V2 智能小车 · ROS 2 全栈（C++ 实现）
 
-基于亚博智能 RASPBOT-V2 麦轮小车的自动驾驶软件栈：树莓派 5 + ROS 2 Lyrical + 激光雷达 + HWT101 IMU + 相机 + **Hailo-8 NPU**，包含底盘驱动、IMU、传感器融合、建图定位、Nav2 导航与 YOLOv8s 视觉推理，8 个 ROS 2 包、**211 项 gtest 单元测试**、完整台架自测试套件。全部运行时节点为 **C++（rclcpp）** 实现；早期 Python 版源码归档于 `legacy_python/`，原 pytest 用例保留在各包 test(s)/ 目录（未改动）。
+基于亚博智能 RASPBOT-V2 麦轮小车的自动驾驶软件栈：树莓派 5 + ROS 2 Lyrical + 激光雷达 + HWT101 IMU + 相机 + **Hailo-8 NPU**，包含底盘驱动、IMU、传感器融合、建图定位、Nav2 导航与 YOLOv8s 视觉推理，8 个 ROS 2 包（另有 PC 上位机网关 `raspbot_console` 第 9 个包，Python/rclpy）、**211 项 gtest 单元测试**、完整台架自测试套件。全部实时运行时节点为 **C++（rclcpp）** 实现（PC 上位机网关除外）；早期 Python 版源码归档于 `legacy_python/`，原 pytest 用例保留在各包 test(s)/ 目录（未改动）。
+
+> PC 端新增「观察 + 控制」上位机控制台（建图启停/保存地图/设目的地/实时位姿/遥控/急停，含无硬件演示模式），见 [PC 上位机控制台](#pc-上位机控制台新增)。
 
 > 文档索引：设计文档见 `docs/`，接口契约见 [`ros2_ws/CONTRACTS.md`](ros2_ws/CONTRACTS.md)，自测试报告见 `docs/自测试报告_2026-11-21.docx`。
 
@@ -10,6 +12,7 @@
 
 - [硬件组成](#硬件组成)
 - [软件架构](#软件架构)
+- [PC 上位机控制台（新增）](#pc-上位机控制台新增)
 - [快速开始](#快速开始)
 - [接口契约（话题/TF）](#接口契约话题tf)
 - [测试](#测试)
@@ -55,7 +58,7 @@ base_node          └── /scan（雷达，经后向 ±165° 滤波）
 建图/导航：slam_toolbox | map_server+amcl → planner/controller → Nav2
 ```
 
-### 8 个包（全部 C++/rclcpp，ament_cmake）
+### 9 个包（8 个 C++/rclcpp ament_cmake + 1 个 Python 网关）
 
 | 包 | 职责 |
 |---|---|
@@ -67,6 +70,42 @@ base_node          └── /scan（雷达，经后向 ±165° 滤波）
 | `raspbot_mock` | fake_base / fake_imu / fake_scan（无硬件 SIL 测试） |
 | `raspbot_safety` | `/diagnostics` 聚合与安全监视（纯函数库 `raspbot_safety_utils`） |
 | `raspbot_perception` | Hailo-8 YOLOv8s 推理节点（HailoRT 原生 C++ API；letterbox/NMS/classes 纯函数库 `raspbot_perception_core`） |
+| `raspbot_console` | PC 上位机网关（Python/rclpy）：HTTP/SSE 状态与地图、会话管理、遥控/急停、Nav2 action 与生命周期激活；见 [PC 上位机控制台](#pc-上位机控制台新增) |
+
+---
+
+## PC 上位机控制台（新增）
+
+在 PC 上观察/控制小车的一体化控制台：`pc_console/`（PC 程序，仅 Python 标准库，**无需在 PC 安装 ROS**）＋ `ros2_ws/src/raspbot_console/`（Pi 端 HTTP/SSE 网关，rclpy）。浏览器打开 `http://127.0.0.1:8090/`，PC 程序代理到 Pi 网关 `:8080`；可用 `--demo` 在无硬件时完整演示。
+
+**功能**：实时 2D 地图、机器人位姿/朝向/速度、激光点、Nav2 路径、诊断与日志；一键开始/停止建图与保存地图；选择地图导航 → 地图上拖拽设初始位姿 → 点击地图设目的地 → 查看剩余距离/取消/重试；键盘（WASD/QE）与虚拟摇杆遥控、500 ms 看门狗松手即停；软件急停（解除需二次确认）；蜂鸣器/RGB/云台；**无硬件演示模式**（12×8 m 室内仿真，可完整跑通建图→保存→导航→急停）。
+
+```powershell
+# 无硬件演示（推荐首次体验；Windows 也可双击 pc_console\start-demo.bat）
+cd pc_console
+python main.py --demo
+
+# 真车（Pi 与 PC 同一局域网；也可双击 start.bat，首次在设置里填 Pi 地址）
+python main.py --pi 192.168.50.98:8080
+
+# Pi 端首次部署（PC 上执行，需要能 ssh/scp 到 Pi）
+pwsh -File tools\console\deploy.ps1
+# Pi 上启动网关（二选一）：
+ros2 run raspbot_console console_bridge --port 8080
+bash ~/tools/console/install_service.sh --start
+```
+
+与 `rasbot.service`（systemd bringup）**二选一**：网关托管 bringup，或网关加 `--attach` 附加到外部 systemd 栈；两者同时托管会抢同一个 ROS 图（详见操作手册）。
+
+文档与工具：[设计文档/接口契约](docs/PC上位机_设计文档_v1.md) · [操作手册](docs/PC上位机_操作手册_v1.md) · [验收记录](docs/PC上位机_验收记录_2026-11-24.md) · [部署与验收脚本](tools/console/README.md)。
+
+界面截图（演示模式）：
+
+| 建图中 | 导航中 |
+|---|---|
+| ![建图](docs/evidence/pc_console_01_mapping.png) | ![导航](docs/evidence/pc_console_03_navigating.png) |
+
+> 当前 Pi 离线：网关的 ROS 运行时部分尚未真机联调；离线验证（PC 程序 64 项 unittest、网关纯逻辑 118 项、Web 19 项 Node 测试、演示模式契约全流程 33 项）全部通过。Pi 上线后按验收记录 §6 执行台架 SIL 与真车 TC-C1~C5。
 
 ---
 
@@ -167,8 +206,23 @@ colcon test-result --verbose   # 期望 Summary: 211 tests, 0 failures
 
 各包 gtest 用例与早期 Python 版 pytest 用例 1:1 对应（`raspbot_base` 50 / `raspbot_imu` 43 / `raspbot_fusion` 33 / `raspbot_safety` 25 / `raspbot_mock` 9 / `raspbot_perception` 31）；原 pytest 文件保留在各包 `test(s)/` 目录（未改动，可对照）。
 
-### 台架自测试套件（`ros2_ws/tools/selftest/` 的兄弟目录 `.dsh/selftest/`）
+### PC 上位机测试（无需 ROS / Pi，离线可跑）
 
+```powershell
+# 1) PC 程序单元/集成测试（64 项）
+cd pc_console; python -m unittest discover -s tests -v
+# 2) Pi 网关纯逻辑测试（118 项，无需 ROS）
+cd ros2_ws/src/raspbot_console; python -m unittest discover -s test -v
+# 3) Web 纯函数 + DOM 契约测试（19 项；沙箱内需关 test-runner 子进程隔离）
+node --test --experimental-test-isolation=none pc_console/web/tests/*.test.mjs
+# 4) 演示模式端到端契约检查（先启动 python pc_console/main.py --demo --port 8090 --no-browser）
+python tools/console/contract_check.py --base http://127.0.0.1:8090 --full `
+  --nav-map demo_home --initialpose 1.5 1.5 0 --goal 2.5 1.5 0
+```
+
+截图/验收证据：`docs/evidence/`；Pi 上线后台架 SIL：`bash ~/tools/console/acceptance_sil.sh`。
+
+### 台架自测试套件（`ros2_ws/tools/selftest/` 的兄弟目录 `.dsh/selftest/`）
 覆盖：环境/链路(I2C)/执行器(云台相机随动)/电机(IMU 振动证据)/契约(频率/单发布者/TF)/故障注入(超时停车、急停、IMU 降级、SIGTERM)/SLAM/Hailo 推理/性能(jitter/时延/资源)/长稳/systemd 重启，以及 SIL 导航（mock 三件套 + slam + Nav2 定点）。
 
 ```bash
@@ -195,13 +249,17 @@ bash .dsh/selftest/09_perf.sh
 - 相机：`v4l2_camera` 不支持 MJPG（本机），固定 YUYV 640×480@15。
 - Nav2 生命周期不 autostart（需先给初始位姿），用 `activate_nav2.sh` 顺序激活。
 - Servo 2（tilt）机械限位 ≤110°，勿命令 180°。
+- **PC 上位机（2026-11-25 新增）**：交付时 Pi 离线，`raspbot_console` 的 ROS 运行时部分（rclpy action/TF/lifecycle、真实 bringup 时序、SSE 经 PC 代理）尚未真机联调；离线测试与演示模式全流程已通过。Pi 上线后按 `docs/PC上位机_验收记录_2026-11-24.md` §6 执行 SIL 与真车验收。
+- **PC 网关与 systemd bringup 二选一**：网关托管 bringup 时先 `sudo systemctl disable --now raspbot.service`；若 systemd 已托管 bringup，网关必须加 `--attach`，否则两者会抢同一 ROS 图。
 
 ## 仓库结构
 
 ```
-ros2_ws/            8 个 ROS 2 包（C++/ament_cmake）+ CONTRACTS.md + tools/slam
+ros2_ws/            9 个 ROS 2 包（8 个 C++/ament_cmake + raspbot_console 网关）+ CONTRACTS.md + tools/slam
+pc_console/         PC 上位机（Python 标准库 + Web UI + 无硬件演示模式）
+tools/console/      上位机部署/契约检查/界面截图/Pi SIL 验收脚本
 legacy_python/      早期 Python 实现归档（行为参考，不再构建）
-docs/               设计文档 v2.0~v2.4、自测试报告、专题报告
+docs/               设计文档 v2.0~v2.4、上位机设计/手册/验收、自测试报告、专题报告
 mech/               机械结构生成脚本与渲染图
 .dsh/selftest/      台架自测试套件（脚本 + 证据日志）
 .gitignore          排除私钥/凭据/厂商工具链/构建产物

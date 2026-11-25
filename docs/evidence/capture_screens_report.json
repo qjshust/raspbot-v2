@@ -1,0 +1,44 @@
+{
+  "base": "http://127.0.0.1:8099",
+  "browser": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+  "shots": [
+    {
+      "file": "docs\\evidence\\pc_console_00_idle.png",
+      "ok": true,
+      "size": 212724
+    },
+    {
+      "file": "docs\\evidence\\pc_console_01_mapping.png",
+      "ok": true,
+      "size": 238018
+    },
+    {
+      "file": "docs\\evidence\\pc_console_02_nav_ready.png",
+      "ok": true,
+      "size": 251173
+    },
+    {
+      "file": "docs\\evidence\\pc_console_03_navigating.png",
+      "ok": true,
+      "size": 257411
+    },
+    {
+      "file": "docs\\evidence\\pc_console_04_estop.png",
+      "ok": true,
+      "size": 278771
+    }
+  ],
+  "errors": [],
+  "notes": [
+    "页面状态(readyState|文本长度|canvas 数): complete|958|1",
+    "[OK] pc_console_00_idle.png —— 208 KB",
+    "[OK] pc_console_01_mapping.png —— 232 KB",
+    "保存地图: evidence_1795565356806 -> \"E:\\\\code\\\\raspberrypi\\\\pc_console\\\\demo_maps\\\\evidence_1795565356806.yaml\"",
+    "导航地图: E:\\code\\raspberrypi\\pc_console\\demo_maps\\demo_home.yaml",
+    "[OK] pc_console_02_nav_ready.png —— 245 KB",
+    "发送目标: {\"x\":3.5,\"y\":1.5,\"yaw\":0,\"stamp\":1795565364.337,\"goal_id\":\"11d97bc38ae946e9be7d2afb89906f8b\"} HTTP 202",
+    "[OK] pc_console_03_navigating.png —— 251 KB",
+    "[OK] pc_console_04_estop.png —— 272 KB"
+  ],
+  "ok": true
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>raspbot_console</name>
+  <version>1.0.0</version>
+  <description>RASPBOT-V2 Pi 端 HTTP/SSE 网关（WP-C1）：/api/state、/api/events、会话管理、地图 PNG/PGM 保存、Nav2 初始位姿与 lifecycle 激活、NavigateToPose action 客户端、遥控看门狗、急停与外设。依据 docs/PC上位机_设计文档_v1.md Wire API v1。</description>
+  <maintainer email="raspbot@example.com">RASPBOT-V2 team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- launch 文件依赖 -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <!-- 运行时（Python 3.12 / ROS 2 Lyrical） -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <!-- console.launch.py 读取 config/console.yaml（ROS 环境自带 PyYAML） -->
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

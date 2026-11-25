@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>RASPBOT-V2 控制台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2322d3ee'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%230b1220'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <!-- ============================== 顶栏 ============================== -->
+    <header class="app-header" id="app-header">
+      <div class="header-brand">
+        <svg class="brand-logo" aria-hidden="true"><use href="#i-robot"></use></svg>
+        <div class="brand-text">
+          <span class="brand-title">RASPBOT-V2</span>
+          <span class="brand-sub">控制台</span>
+        </div>
+        <span class="badge badge-demo hidden" id="badge-demo">演示模式</span>
+        <span class="badge badge-mode" id="badge-mode">连接中</span>
+      </div>
+
+      <div class="header-status">
+        <div class="status-item" id="conn-item">
+          <span class="status-dot" id="conn-dot"></span>
+          <span class="status-label">连接</span>
+          <span class="status-text" id="conn-text">正在连接…</span>
+          <span class="status-meta mono" id="latency-text">—</span>
+        </div>
+        <div class="status-item" id="ros-item">
+          <span class="status-dot" id="ros-dot"></span>
+          <span class="status-label">ROS</span>
+          <span class="status-text" id="ros-text">未知</span>
+        </div>
+        <div class="status-item" id="session-item">
+          <span class="status-dot" id="session-dot"></span>
+          <span class="status-label">会话</span>
+          <span class="status-text" id="session-header-text">未连接</span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="btn btn-estop" id="btn-estop" type="button" aria-pressed="false" title="软件急停（锁存）">
+          <svg class="icon" aria-hidden="true"><use href="#i-power"></use></svg>
+          <span id="estop-text">急停</span>
+        </button>
+        <button class="btn btn-icon" id="btn-settings" type="button" title="设置" aria-label="设置">
+          <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+        </button>
+        <button class="btn btn-icon" id="btn-help" type="button" title="快捷键帮助" aria-label="快捷键帮助">
+          <svg class="icon" aria-hidden="true"><use href="#i-help"></use></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="banner banner-error hidden" id="error-banner" role="alert">
+      <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+      <span id="error-banner-text">诊断出现错误</span>
+    </div>
+    <div class="banner banner-estop hidden" id="estop-banner" role="alert">
+      <svg class="icon" aria-hidden="true"><use href="#i-power"></use></svg>
+      <span>急停已锁存：遥控 / 目的地 / 会话启动已禁用，解除需二次确认</span>
+    </div>
+
+    <!-- ============================== 主体 ============================== -->
+    <main class="app-main" id="app-main">
+      <!-- ---------------------------- 左栏 ---------------------------- -->
+      <aside class="left-panel" aria-label="会话与地图">
+        <section class="card" id="card-session">
+          <div class="card-header">
+            <h2>会话控制</h2>
+            <span class="badge" id="session-mode-badge">空闲</span>
+          </div>
+
+          <div class="mode-cards" id="session-idle">
+            <button class="mode-card" id="mode-base" type="button">
+              <svg class="mode-icon" aria-hidden="true"><use href="#i-joystick"></use></svg>
+              <span class="mode-title">手动遥控</span>
+              <span class="mode-sub">仅底盘 + 遥控</span>
+            </button>
+            <button class="mode-card" id="mode-slam" type="button">
+              <svg class="mode-icon" aria-hidden="true"><use href="#i-scan"></use></svg>
+              <span class="mode-title">开始建图</span>
+              <span class="mode-sub">SLAM + 实时地图</span>
+            </button>
+            <button class="mode-card" id="mode-nav" type="button">
+              <svg class="mode-icon" aria-hidden="true"><use href="#i-target"></use></svg>
+              <span class="mode-title">开始导航</span>
+              <span class="mode-sub" id="mode-nav-map">未选择地图</span>
+            </button>
+          </div>
+
+          <div class="hidden" id="session-active">
+            <div class="session-line">
+              <span class="session-mode" id="session-mode-text">—</span>
+              <span class="badge" id="session-state-badge">—</span>
+            </div>
+            <div class="progress-track" id="session-progress-wrap">
+              <div class="progress-fill" id="session-progress-bar"></div>
+            </div>
+            <p class="session-message" id="session-message">—</p>
+            <p class="session-error hidden" id="session-error"></p>
+            <div class="btn-row">
+              <button class="btn" id="btn-save-map" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#i-save"></use></svg>
+                保存地图
+              </button>
+              <button class="btn btn-danger-ghost" id="btn-stop-session" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#i-stop"></use></svg>
+                停止会话
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="card-maps">
+          <div class="card-header">
+            <h2>地图列表</h2>
+            <button class="btn btn-icon-sm" id="btn-refresh-maps" type="button" title="刷新地图列表" aria-label="刷新地图列表">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+            </button>
+          </div>
+          <ul class="map-list" id="map-list"></ul>
+          <p class="empty-hint" id="map-list-empty">暂无已保存地图</p>
+          <p class="card-hint">点击地图选中，作为「开始导航」的底图</p>
+        </section>
+
+        <section class="card" id="card-periph">
+          <div class="card-header"><h2>外设</h2></div>
+          <div class="periph-row">
+            <button class="btn btn-toggle" id="btn-buzzer" type="button" aria-pressed="false">
+              <svg class="icon" aria-hidden="true"><use href="#i-bell"></use></svg>
+              <span>蜂鸣器</span>
+              <span class="badge" id="buzzer-state">关</span>
+            </button>
+          </div>
+          <div class="periph-row">
+            <label class="periph-label" for="led-color">RGB 灯</label>
+            <input type="color" id="led-color" value="#22d3ee" aria-label="RGB 灯颜色" />
+            <button class="btn btn-sm" id="btn-led-apply" type="button">应用</button>
+            <button class="btn btn-sm" id="btn-led-off" type="button">关闭</button>
+          </div>
+          <div class="periph-row">
+            <label class="periph-label" for="servo-pan">云台 pan</label>
+            <input type="range" id="servo-pan" min="0" max="180" step="1" value="90" />
+            <span class="mono periph-value" id="servo-pan-value">90°</span>
+          </div>
+          <div class="periph-row">
+            <label class="periph-label" for="servo-tilt">云台 tilt</label>
+            <input type="range" id="servo-tilt" min="0" max="110" step="1" value="45" />
+            <span class="mono periph-value" id="servo-tilt-value">45°</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-sm" id="btn-servo-apply" type="button">应用云台</button>
+          </div>
+          <p class="card-hint" id="periph-hint">会话运行时可控制外设</p>
+        </section>
+      </aside>
+
+      <!-- ---------------------------- 中央地图 ---------------------------- -->
+      <section class="map-column" id="map-column" aria-label="地图">
+        <div class="map-toolbar" id="map-toolbar">
+          <div class="tool-group" role="group" aria-label="地图工具">
+            <button class="tool-btn active" id="tool-pointer" type="button" title="指针 / 平移（V）">
+              <svg class="icon" aria-hidden="true"><use href="#i-pointer"></use></svg><span>指针</span>
+            </button>
+            <button class="tool-btn" id="tool-goal" type="button" title="设目的地（G）">
+              <svg class="icon" aria-hidden="true"><use href="#i-target"></use></svg><span>目的地</span>
+            </button>
+            <button class="tool-btn" id="tool-initialpose" type="button" title="设初始位姿（P）">
+              <svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg><span>初始位姿</span>
+            </button>
+          </div>
+          <div class="tool-group" role="group" aria-label="视图">
+            <button class="tool-btn" id="btn-follow" type="button" title="跟随机器人（F）" aria-pressed="false">
+              <svg class="icon" aria-hidden="true"><use href="#i-follow"></use></svg><span>跟随</span>
+            </button>
+            <button class="tool-btn" id="btn-recenter" type="button" title="回中到机器人（R）">回中</button>
+            <button class="tool-btn" id="btn-fit" type="button" title="整图适配（0 / H）">适配</button>
+          </div>
+          <div class="tool-group zoom-group" role="group" aria-label="缩放">
+            <button class="tool-btn tool-btn-icon" id="btn-zoom-out" type="button" title="缩小（-）" aria-label="缩小">−</button>
+            <span class="mono zoom-level" id="zoom-level">—</span>
+            <button class="tool-btn tool-btn-icon" id="btn-zoom-in" type="button" title="放大（+）" aria-label="放大">＋</button>
+          </div>
+          <div class="tool-group layer-group" role="group" aria-label="图层">
+            <button class="chip active" id="toggle-grid" type="button" aria-pressed="true">网格</button>
+            <button class="chip active" id="toggle-scan" type="button" aria-pressed="true">激光</button>
+            <button class="chip active" id="toggle-path" type="button" aria-pressed="true">路径</button>
+            <button class="chip active" id="toggle-trail" type="button" aria-pressed="true">轨迹</button>
+            <button class="chip active" id="toggle-robot" type="button" aria-pressed="true">机器人</button>
+          </div>
+        </div>
+
+        <div class="map-viewport" id="map-viewport">
+          <canvas id="map-canvas"></canvas>
+          <div class="map-hud map-hud-top-left">
+            <span class="chip mono" id="map-frame-chip">帧 —</span>
+            <span class="chip mono" id="map-size-chip">—</span>
+            <span class="chip mono" id="map-version-chip">v—</span>
+          </div>
+          <div class="map-hud map-hud-bottom-left mono" id="map-coord">x — / y —</div>
+          <div class="map-hint hidden" id="map-tool-hint"></div>
+          <div class="map-empty hidden" id="map-empty">暂无地图数据</div>
+          <div class="map-follow-flag hidden" id="map-follow-flag">跟随中</div>
+          <div class="map-watermark hidden" id="map-watermark">
+            <svg class="icon watermark-icon" aria-hidden="true"><use href="#i-offline"></use></svg>
+            <div class="watermark-title" id="map-watermark-title">未连接</div>
+            <div class="watermark-time mono" id="map-watermark-time">最后更新 —</div>
+          </div>
+        </div>
+
+        <div class="bottom-panel" id="bottom-panel">
+          <!-- 遥控条 -->
+          <div class="teleop-bar" id="teleop-bar">
+            <div class="teleop-status" id="teleop-status">
+              <span class="status-dot" id="teleop-status-dot"></span>
+              <span id="teleop-status-text">会话未运行</span>
+            </div>
+            <div class="key-hints" aria-hidden="true">
+              <kbd id="key-w">W</kbd>
+              <kbd id="key-a">A</kbd>
+              <kbd id="key-s">S</kbd>
+              <kbd id="key-d">D</kbd>
+              <kbd id="key-q">Q</kbd>
+              <kbd id="key-e">E</kbd>
+              <kbd id="key-shift">Shift</kbd>
+            </div>
+            <div class="joystick" id="joystick" role="application" aria-label="虚拟摇杆（鼠标/触摸）">
+              <span class="joystick-ring" aria-hidden="true"></span>
+              <span class="joystick-knob" id="joystick-knob"></span>
+            </div>
+            <div class="speed-control">
+              <label class="speed-label" for="speed-slider">速度上限</label>
+              <input type="range" id="speed-slider" min="10" max="100" step="5" value="60" />
+              <span class="mono speed-value" id="speed-value">—</span>
+            </div>
+            <button class="btn btn-sm btn-stop-teleop" id="btn-teleop-stop" type="button">停止遥控</button>
+          </div>
+
+          <!-- 事件日志 -->
+          <section class="log-panel" id="log-panel">
+            <div class="log-header">
+              <button class="log-toggle" id="btn-log-toggle" type="button" aria-expanded="true">
+                <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron"></use></svg>
+                <span>事件日志</span>
+                <span class="log-count" id="log-count">0</span>
+              </button>
+              <div class="log-actions">
+                <select class="select-sm" id="log-filter" aria-label="日志级别过滤">
+                  <option value="all">全部级别</option>
+                  <option value="info">信息</option>
+                  <option value="warn">警告</option>
+                  <option value="error">错误</option>
+                </select>
+                <button class="btn btn-sm" id="btn-log-pause" type="button" aria-pressed="false">暂停滚动</button>
+                <button class="btn btn-sm" id="btn-session-logs" type="button">会话日志</button>
+                <button class="btn btn-sm" id="btn-log-clear" type="button">清空</button>
+                <button class="btn btn-sm" id="btn-log-download" type="button">
+                  <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                  下载
+                </button>
+              </div>
+            </div>
+            <div class="log-body" id="log-body">
+              <div class="log-list" id="log-list" role="log" aria-live="off"></div>
+              <div class="log-empty" id="log-empty">暂无日志</div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ---------------------------- 右栏 ---------------------------- -->
+      <aside class="right-panel" aria-label="遥测与诊断">
+        <section class="card" id="card-telemetry">
+          <div class="card-header">
+            <h2>机器人遥测</h2>
+            <span class="badge badge-tone-muted" id="tele-frame">—</span>
+          </div>
+          <dl class="kv-grid">
+            <div class="kv"><dt>位置 x</dt><dd class="mono" id="tele-x">—</dd></div>
+            <div class="kv"><dt>位置 y</dt><dd class="mono" id="tele-y">—</dd></div>
+            <div class="kv"><dt>朝向 yaw</dt><dd class="mono" id="tele-yaw">—</dd></div>
+            <div class="kv"><dt>速度 vx</dt><dd class="mono" id="tele-vx">—</dd></div>
+            <div class="kv"><dt>速度 vy</dt><dd class="mono" id="tele-vy">—</dd></div>
+            <div class="kv"><dt>角速度 wz</dt><dd class="mono" id="tele-wz">—</dd></div>
+            <div class="kv"><dt>IMU yaw</dt><dd class="mono" id="tele-imu">—</dd></div>
+            <div class="kv"><dt>激光前向</dt><dd class="mono" id="tele-scan-front">—</dd></div>
+            <div class="kv"><dt>激光最近</dt><dd class="mono" id="tele-scan-min">—</dd></div>
+            <div class="kv"><dt>数据新鲜度</dt><dd class="mono" id="tele-age">—</dd></div>
+          </dl>
+        </section>
+
+        <section class="card" id="card-nav">
+          <div class="card-header">
+            <h2>导航状态</h2>
+            <span class="badge badge-tone-muted" id="nav-tone-chip">—</span>
+          </div>
+          <p class="nav-state" id="nav-state-text">未进入导航模式</p>
+          <div class="progress-track hidden" id="nav-activation-wrap">
+            <div class="progress-fill" id="nav-activation-bar"></div>
+          </div>
+          <p class="card-hint" id="nav-activation-text"></p>
+          <dl class="kv-grid">
+            <div class="kv"><dt>剩余距离</dt><dd class="mono" id="nav-distance">—</dd></div>
+            <div class="kv"><dt>已用时间</dt><dd class="mono" id="nav-time">—</dd></div>
+            <div class="kv"><dt>恢复次数</dt><dd class="mono" id="nav-recoveries">—</dd></div>
+            <div class="kv"><dt>目的地</dt><dd class="mono" id="nav-goal-coord">—</dd></div>
+            <div class="kv"><dt>初始位姿</dt><dd class="mono" id="nav-initialpose-coord">—</dd></div>
+            <div class="kv"><dt>导航地图</dt><dd class="mono" id="nav-map-name">—</dd></div>
+          </dl>
+          <div class="btn-row">
+            <button class="btn btn-sm" id="btn-cancel-goal" type="button">取消目标</button>
+            <button class="btn btn-sm" id="btn-nav-activate" type="button">重新激活</button>
+            <button class="btn btn-sm" id="btn-set-initialpose" type="button">设初始位姿</button>
+          </div>
+          <details class="nav-numeric" id="nav-numeric">
+            <summary>数值输入（备选操作）</summary>
+            <div class="numeric-row">
+              <span class="numeric-label">目的地</span>
+              <label>x <input id="goal-x" type="number" step="0.01" placeholder="0.00" /></label>
+              <label>y <input id="goal-y" type="number" step="0.01" placeholder="0.00" /></label>
+              <label>yaw° <input id="goal-yaw" type="number" step="1" placeholder="空=当前" /></label>
+              <button class="btn btn-sm" id="btn-send-goal" type="button">发送</button>
+            </div>
+            <div class="numeric-row">
+              <span class="numeric-label">初始位姿</span>
+              <label>x <input id="init-x" type="number" step="0.01" placeholder="0.00" /></label>
+              <label>y <input id="init-y" type="number" step="0.01" placeholder="0.00" /></label>
+              <label>yaw° <input id="init-yaw" type="number" step="1" placeholder="0" /></label>
+              <button class="btn btn-sm" id="btn-send-initialpose" type="button">发布</button>
+            </div>
+          </details>
+        </section>
+
+        <section class="card" id="card-diagnostics">
+          <div class="card-header">
+            <h2>诊断</h2>
+            <button class="btn btn-sm" id="btn-diag-expand" type="button" aria-expanded="false">展开全部</button>
+          </div>
+          <div class="diag-counts">
+            <span class="diag-count tone-ok"><b id="diag-ok">0</b> OK</span>
+            <span class="diag-count tone-warn"><b id="diag-warn">0</b> WARN</span>
+            <span class="diag-count tone-error"><b id="diag-error">0</b> ERROR</span>
+            <span class="diag-age mono" id="diag-age">—</span>
+          </div>
+          <p class="diag-summary" id="diag-summary">等待诊断数据…</p>
+          <ul class="diag-list hidden" id="diag-list"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <!-- ============================== 弹窗 ============================== -->
+    <div class="dialog-overlay hidden" id="dialog-save-map" data-dialog>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-save-map-title">
+        <h2 id="dialog-save-map-title">保存地图</h2>
+        <label class="field" for="save-map-name">
+          <span>地图名称</span>
+          <input id="save-map-name" type="text" maxlength="40" autocomplete="off" spellcheck="false" />
+        </label>
+        <p class="field-hint" id="save-map-hint">名称仅允许字母/数字/下划线/点/短横线（1–40 字符）</p>
+        <div class="dialog-actions">
+          <button class="btn" id="btn-save-map-cancel" type="button" data-close>取消</button>
+          <button class="btn btn-primary" id="btn-save-map-confirm" type="button">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-overlay hidden" id="dialog-settings" data-dialog>
+      <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="dialog-settings-title">
+        <h2 id="dialog-settings-title">设置</h2>
+        <p class="notice hidden" id="settings-demo-note">演示模式：Pi 目标地址不可修改（无需连接真车）。</p>
+        <div class="field-row">
+          <label class="field" for="set-pi-host">
+            <span>Pi 地址</span>
+            <input id="set-pi-host" type="text" placeholder="192.168.50.98" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field field-narrow" for="set-pi-port">
+            <span>Pi 端口</span>
+            <input id="set-pi-port" type="number" min="1" max="65535" step="1" placeholder="8080" />
+          </label>
+        </div>
+        <label class="field" for="set-token">
+          <span>访问 token（留空保持不变）</span>
+          <input id="set-token" type="password" autocomplete="off" placeholder="可选，网关 --token 启用时填写" />
+        </label>
+        <p class="field-hint mono" id="settings-config-path">配置文件：—</p>
+        <div class="settings-test-row">
+          <button class="btn" id="btn-settings-test" type="button">连接测试</button>
+          <span class="test-result" id="settings-test-result">未测试</span>
+        </div>
+        <fieldset class="settings-layers">
+          <legend>图层默认</legend>
+          <label><input type="checkbox" id="set-layer-grid" checked /> 网格与坐标轴</label>
+          <label><input type="checkbox" id="set-layer-scan" checked /> 激光扫描点</label>
+          <label><input type="checkbox" id="set-layer-path" checked /> 导航路径</label>
+          <label><input type="checkbox" id="set-layer-trail" checked /> 机器人轨迹</label>
+        </fieldset>
+        <p class="field-hint">状态刷新频率固定 10 Hz（SSE state 事件）；快捷键见「帮助」。</p>
+        <div class="dialog-actions">
+          <button class="btn" id="btn-settings-cancel" type="button" data-close>取消</button>
+          <button class="btn btn-primary" id="btn-settings-save" type="button">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-overlay hidden" id="dialog-help" data-dialog>
+      <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="dialog-help-title">
+        <h2 id="dialog-help-title">帮助与快捷键</h2>
+        <h3>键盘与鼠标</h3>
+        <dl class="shortcut-list" id="help-shortcuts"></dl>
+        <h3>安全提示</h3>
+        <ul class="help-notes">
+          <li>无轮编码器：<b>odom 位姿会漂移</b>，导航定位依赖 AMCL 激光修正；遥测显示「未定位」时禁止依赖走位精度。</li>
+          <li>2D 雷达扫描面离地约 74 mm，<b>看不见低矮/玻璃/镜面障碍</b>，必须有人监护并限定场地。</li>
+          <li>导航模式需先在地图上设置初始位姿，Nav2 才会激活；冷启动可能需要 20–60 s。</li>
+          <li>急停按钮点击立即锁存；解除需要二次确认，解除前请确认机器人周围安全。</li>
+          <li>断连时保留最后画面，遥控与危险操作会被禁用；恢复连接后自动刷新。</li>
+        </ul>
+        <div class="dialog-actions">
+          <button class="btn btn-primary" id="btn-help-close" type="button" data-close>知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-overlay hidden" id="dialog-confirm" data-dialog>
+      <div class="dialog dialog-sm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <h2 id="confirm-title">确认操作</h2>
+        <p class="confirm-message" id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button class="btn" id="btn-confirm-cancel" type="button">取消</button>
+          <button class="btn btn-primary" id="btn-confirm-ok" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-root" id="toast-root" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- 内联 SVG 图标库（禁止任何外部图标/字体/CDN） -->
+    <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="i-robot" viewBox="0 0 24 24">
+        <rect x="4" y="7" width="16" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <circle cx="9" cy="13" r="1.6" fill="currentColor" />
+        <circle cx="15" cy="13" r="1.6" fill="currentColor" />
+        <path d="M12 7V4M9 4h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        <path d="M2 12v3M22 12v3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7"
+          fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-help" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M9.4 9.2a2.7 2.7 0 1 1 3.6 2.5c-.7.3-1 .8-1 1.5v.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        <circle cx="12" cy="17" r="1" fill="currentColor" />
+      </symbol>
+      <symbol id="i-power" viewBox="0 0 24 24">
+        <path d="M12 3v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        <path d="M6.3 6.5a8 8 0 1 0 11.4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-pointer" viewBox="0 0 24 24">
+        <path d="M5 3.5 19 12l-6.2 1.4L10.4 20 5 3.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <circle cx="12" cy="12" r="2.4" fill="currentColor" />
+        <path d="M12 1.8v3.4M12 18.8v3.4M1.8 12h3.4M18.8 12h3.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24">
+        <path d="M6 21V3.5M6 4h11l-2.2 3.6L17 11H6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-follow" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0-2.3 6.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        <path d="M20 4.5V11h-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24">
+        <path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.8 2H4.2L6 16.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        <path d="M9.8 20.5a2.4 2.4 0 0 0 4.4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-light" viewBox="0 0 24 24">
+        <path d="M9 17.5h6M10 20.5h4M12 3a6 6 0 0 0-3.4 10.9c.6.4 1 1.1 1 1.9v.7h4.8v-.7c0-.8.4-1.5 1-1.9A6 6 0 0 0 12 3Z"
+          fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-scan" viewBox="0 0 24 24">
+        <path d="M12 12 19 5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        <path d="M12 12 4.5 7.5M12 12l-3 8M12 12l7 4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".7" />
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7" />
+      </symbol>
+      <symbol id="i-save" viewBox="0 0 24 24">
+        <path d="M4.5 4.5h11l4 4v11h-15v-15Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        <path d="M8 4.5V9h7V4.5M8 19.5v-5h8v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="5.5" y="5.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 3.5v11M7.5 10.5 12 15l4.5-4.5M4.5 19.5h15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="M7 14.5 12 9.5l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M4.5 12.5 10 18 19.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path d="M12 3.5 22 20H2L12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+        <path d="M12 9.5v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        <circle cx="12" cy="17.2" r="1" fill="currentColor" />
+      </symbol>
+      <symbol id="i-offline" viewBox="0 0 24 24">
+        <path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9 16.4a5 5 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        <path d="M4 4 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        <circle cx="12" cy="19.5" r="1" fill="currentColor" />
+      </symbol>
+      <symbol id="i-joystick" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.7" />
+        <path d="M12 11v6M8.5 20.5h7M6 8h-2M20 8h-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+      </symbol>
+    </svg>
+
+    <noscript>
+      <p class="noscript-warning">本控制台需要启用 JavaScript（原生 ES Modules），请使用 Edge/Chrome 最近两年版本。</p>
+    </noscript>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
