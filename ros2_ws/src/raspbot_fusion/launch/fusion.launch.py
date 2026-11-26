@@ -39,9 +39,11 @@ def generate_launch_description():
         # 唯一 /odom 发布者（r_l 默认输出 odometry/filtered）
         remappings=[
             ('odometry/filtered', 'odom'),
-            # r_l 内部固定注册 /diagnostics 发布器（print_diagnostics: false
-            # 只停止发布、不撤销注册，仍会与 H 的聚合节点冲突/SW-C04），
-            # 重映射到私有话题规避单发布者冲突。
+            # r_l 的 diagnostics 发布器需要保留（ekf.yaml print_diagnostics: true，
+            # 否则其内部 TopicDiagnostic 注册了却不 tick()，会发布假的
+            # "No events recorded." ERROR，2026-11-26 真机实测）；这里重映射到
+            # ekf/diagnostics 再由 H 的 safety_node 聚合，保持 /diagnostics
+            # 唯一发布者契约（SW-C04）。
             ('diagnostics', 'ekf/diagnostics'),
         ],
     )

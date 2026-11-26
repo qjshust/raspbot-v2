@@ -253,6 +253,7 @@ bash .dsh/selftest/09_perf.sh
 - Servo 2（tilt）机械限位 ≤110°，勿命令 180°。
 - **PC 上位机（2026-11-25 新增，2026-11-26 真机联调）**：`raspbot_console` 已在 Pi 上构建运行，台架 SIL 全通过、真硬件 base 只读遥测通过、PC↔Pi 代理与 Web UI 联调通过。**未验证**：真车落地运动/建图/导航 TC-C1~C5、急停机械时延。另注意：本机 USB SSD（`/mnt/ssd`）有 UAS 掉盘历史，ROS 日志写 SSD 可阻塞节点线程并导致 Nav2/DDS 激活超时；台架建议 `--ros-log-dir /tmp/console_roslog --maps-dir ~/ros2_ws/maps`（`acceptance_sil.sh` 已内置）。Wi-Fi 质量差时 UI/SSH 延迟明显升高。详见 `docs/PC上位机_验收记录_2026-11-24.md` §9。
 - **PC 网关与 systemd bringup 二选一**：网关托管 bringup 时先 `sudo systemctl disable --now raspbot.service`；若 systemd 已托管 bringup，网关必须加 `--attach`，否则两者会抢同一 ROS 图。
+- **`raspbot_fusion/config/ekf.yaml` 的 `print_diagnostics` 必须保持 `true`**：robot_localization 在 `false` 时仍注册 `odometry/filtered` 频率诊断任务却不调用 `tick()`，导致 `/ekf/diagnostics` 每秒发布假 ERROR “No events recorded.”（`/odom` 实际正常 30 Hz，PC 控制台诊断面板会显示红色 ERROR）。`fusion.launch.py` 已把 diagnostics remap 到 `ekf/diagnostics` 并由 safety_node 聚合，不会破坏 `/diagnostics` 单发布者契约。详见 `docs/evidence/ekf_diagnostics_2026-11-26.txt`。
 
 ## 仓库结构
 

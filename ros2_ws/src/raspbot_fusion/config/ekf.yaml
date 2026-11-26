@@ -20,8 +20,13 @@ ekf_node:
 
     # ---------- 诊断输出（改动点 1） ----------
     # 默认 print_diagnostics=true 会向 /diagnostics 发布；契约规定 /diagnostics
-    # 唯一发布者是 H（safety_monitor，1 Hz）。显式关闭避免双发布者（SW-C04）。
-    print_diagnostics: false
+    # 唯一发布者是 H（safety_monitor，1 Hz）。fusion.launch.py 已把本节点
+    # diagnostics 重映射到 ekf/diagnostics（由 safety_node 聚合并加前缀），
+    # 因此这里必须保持 **true**——若设为 false，robot_localization 仍会注册
+    # TopicDiagnostic 任务但不再 tick()/force_update()，导致 ekf/diagnostics
+    # 每秒报一条假的 ERROR "No events recorded."（实测 2026-11-26；/odom 明明
+    # 30 Hz 正常）。保持 true 后该条会显示真实频率（约 30 Hz、OK）。
+    print_diagnostics: true
 
     # ---------- 传感器 0：/odom_raw（A 的指令速度开环积分） ----------
     # 无编码器：位姿是开环积分结果，绝不能当绝对位姿观测（会把积分误差反向

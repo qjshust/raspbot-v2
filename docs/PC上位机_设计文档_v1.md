@@ -727,13 +727,19 @@ python tools/console/contract_check.py --base http://127.0.0.1:8090 --full \
 被误判为 `external_stack`。停会话后的外部栈检测宽限由 3 s 放宽到 **10 s**
 （`controller._session_grace_until`）。若现场仍偶发，重启网关或在 UI 提示后重试。
 
-### 11.4 真机联调修复的两个实现 bug
+### 11.4 真机联调修复的三个实现 bug
 
 1. `diagnostic_msgs/DiagnosticStatus.level` 在 rclpy 中实际可能是单字节 `bytes`
    （`b'\x00'`）。原实现 `int(level)` 导致整帧 `/diagnostics` 丢弃；已兼容。
 2. `ros2_ws/src/raspbot_mock/src/fake_imu.cpp` 把 `sensor_msgs/Imu` 的 9 元素协方差
    当 6×6（索引 0/7/35）写入，越界触发 libstdc++ 断言（Ubuntu 26.04/GCC15 上
    SIGABRT）；已改为 0/4/8。该修复在 mock 包，不影响真车 IMU。
+3. `raspbot_fusion/config/ekf.yaml` 的 `print_diagnostics` 曾设为 false：r_l 仍会
+   注册 `odometry/filtered` 频率诊断任务，但不再 `tick()`/`force_update()`，导致
+   `/ekf/diagnostics` 每秒发布假 ERROR “No events recorded.”（`/odom` 实际
+   30 Hz 正常）。改回 **true** 后该条为 OK（实测 29.9999 Hz）；launch 已把
+   diagnostics remap 到 `ekf/diagnostics` 并由 safety_node 聚合，`/diagnostics`
+   单发布者契约不受影响。详见 `docs/evidence/ekf_diagnostics_2026-11-26.txt`。
 
 ### 11.5 已实测结论（Pi 台架）
 

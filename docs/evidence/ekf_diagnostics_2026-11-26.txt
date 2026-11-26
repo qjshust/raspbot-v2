@@ -1,0 +1,87 @@
+# EKF 诊断假 ERROR 复现与修复证据（2026-11-26，Pi 5 真机）
+
+## 现象（修复前，ekf.yaml `print_diagnostics: false`）
+
+`ros2 topic echo /ekf/diagnostics --once`（此时 `/odom` 实测 30.00 Hz）：
+
+```yaml
+status:
+- level: "\x02"                     # ERROR
+  name: 'ekf_node: odometry/filtered topic status'
+  message: No events recorded.
+  hardware_id: none
+  values:
+  - key: Events in window
+    value: '0'
+  - key: Events since startup
+    value: '0'
+  - key: Duration of window (s)
+    value: '9.893118'
+  - key: Actual frequency (Hz)
+    value: '0.000000'
+  - key: Minimum acceptable frequency (Hz)
+    value: '25.200000'
+  - key: Maximum acceptable frequency (Hz)
+    value: '35.200000'
+```
+
+safety_node 聚合后（`/diagnostics` 前缀为话题名）：
+
+```yaml
+- level: "\x02"
+  name: '/ekf/diagnostics: ekf_node: odometry/filtered topic status'
+  message: No events recorded.
+```
+
+PC 控制台诊断面板因此显示 ERROR（用户实际看到的报错）。
+
+## 根因（robot_localization 3.10.0 源码）
+
+`src/ros_filter.cpp`：
+
+- `initialize()` 无条件构造并注册
+  `HeaderlessTopicDiagnostic("odometry/filtered", updater, FrequencyStatusParam(...))`；
+- 但 `freq_diag_->tick()` 与 `diagnostic_updater_->force_update()` 都包在
+  `if (print_diagnostics_)` 里；
+- `print_diagnostics: false` 只跳过 tick/force_update，**没有注销已注册的诊断任务**；
+- diagnostic_updater 的 1 Hz 定时器仍会发布该任务 → 永远 0 事件 / 0 Hz / ERROR。
+
+`/odom` 发布正常（remap `odometry/filtered→odom`），所以这是**假报警**，不是融合故障。
+
+## 修复
+
+`ros2_ws/src/raspbot_fusion/config/ekf.yaml`：`print_diagnostics: false → true`。
+`fusion.launch.py` 仍把 `diagnostics` remap 到 `ekf/diagnostics`，由 safety_node
+聚合，所以不违反“`/diagnostics` 唯一发布者”契约。
+
+## 修复后（同机复测）
+
+```yaml
+status:
+- level: "\0"                       # OK
+  name: 'ekf_node: Filter diagnostic updater'
+  message: The robot_localization state estimation node appears to be functioning properly.
+- level: "\0"                       # OK
+  name: 'ekf_node: odometry/filtered topic status'
+  values:
+  - key: Events in window
+    value: '150'
+  - key: Events since startup
+    value: '178'
+  - key: Duration of window (s)
+    value: '5.000011'
+  - key: Actual frequency (Hz)
+    value: '29.999931'
+  - key: Minimum acceptable frequency (Hz)
+    value: '25.200000'
+  - key: Maximum acceptable frequency (Hz)
+    value: '35.200000'
+```
+
+`GET /api/state` 的 `diagnostics`：`level=ok, counts={ok:15, warn:0, error:0}`；
+`/odom` 实测 30.015 Hz。PC 控制台不再显示该项为 ERROR。
+
+## 相关
+
+- `ros2_ws/src/raspbot_fusion/README.md`（诊断发布器说明与参数表已同步）
+- `ros2_ws/src/raspbot_fusion/launch/fusion.launch.py`（remap 注释已同步）

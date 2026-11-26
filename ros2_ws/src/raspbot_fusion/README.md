@@ -20,9 +20,17 @@
 - `/cmd_vel_safe`、`/odom`、`/odometry/filtered` 的**唯一发布者**均在本包（SW-C04）。
 - `odom→base_link` TF 唯一 authority 是 ekf_node（SW-C05）。
 - ekf_node 的 diagnostics 发布器重映射到 `ekf/diagnostics`（launch 内
-  `remappings=[('diagnostics', 'ekf/diagnostics')]`，规避与 H 聚合节点的
-  单发布者冲突；`print_diagnostics: false` 只停止发布、不撤销 r_l 内部的
-  发布器注册）。
+  `remappings=[('diagnostics', 'ekf/diagnostics')]`），再由 H 的 safety_node
+  聚合进 `/diagnostics`，规避单发布者冲突。
+- **必须保持 `print_diagnostics: true`**（2026-11-26 真机修正）：r_l 在
+  `print_diagnostics=false` 时只跳过 `freq_diag_->tick()` 与
+  `force_update()`，但已在构造时注册的 `HeaderlessTopicDiagnostic` 任务仍会被
+  diagnostic_updater 的 1 Hz 定时器发布，于是 `ekf/diagnostics` 每秒出现一条
+  **假的 ERROR**：`odometry/filtered topic status: No events recorded.`
+  （values：Events 0 / Actual frequency 0），而 `/odom` 实际稳定 30 Hz。
+  改为 true 后该条目变为 OK（实测 29.9999 Hz，Events in window 150），并多一条
+  "Filter diagnostic updater: ... functioning properly."，两者均由 safety_node
+  聚合；不影响 `/diagnostics` 单发布者契约。
 - 前置：`raspbot_description` 的 robot_state_publisher 已在运行（ekf_node 需要
   `base_link→imu_link` TF 才能消费 `/imu/data`）。
 
@@ -71,7 +79,7 @@ launch/fusion.launch.py              启动（原样 install 到 share/）
 | imu0 yaw 观测噪声 | 消息自带 | FR-E-03：直接使用 `/imu/data` 的 orientation 协方差（raspbot_imu/config/imu.yaml `orientation_yaw_variance`，10⁻³ 量级） |
 | odom0_queue_size / imu0_queue_size | 10 / 10 | 默认 20 → 10 |
 | odom0_sensor_timeout / imu0_sensor_timeout | 0.2 / 1.0 | 默认 1/frequency≈0.033 s 对 30 Hz odom 太紧（抖动误拒）；IMU 对齐设计 §7.4 的 1 s 掉线判定 |
-| print_diagnostics | false | 默认 true 会向 `/diagnostics` 发布；契约规定其唯一发布者是 H（SW-C04）；配合 launch 的 diagnostics remap |
+| print_diagnostics | **true** | 必须为 true：r_l 在 false 时跳过 freq_diag tick 但仍注册诊断任务，会向 `ekf/diagnostics` 发布假 ERROR "No events recorded."（2026-11-26 真机实测）；true 后输出真实 30 Hz 频率诊断，配合 launch 的 diagnostics remap 仍满足 `/diagnostics` 单发布者契约 |
 | process_noise_covariance | [0.05,0.05,1e-9,1e-9,1e-9,0.01, 0.05,0.05,1e-9,1e-9,1e-9,0.02, 0.1,0.1,0.1] | 无编码器 → 位置/速度不确定性靠过程噪声维持；yaw 项 < 位置项；2D 锁零轴给 1e-9；ax/ay/az 0.1 占位（未启用加速度观测） |
 | initial_estimate_covariance | [0.01,0.01,1e-9,1e-9,1e-9,0.01, 0.1,0.1,0.1,1e-9,1e-9,0.1, 0.1,0.1,0.1] | 启动不确定度取小值；速度 0.1 允许快速收敛；2D 锁零轴给 1e-9；ax/ay/az 0.1 占位 |
 
