@@ -682,3 +682,71 @@ python tools/console/contract_check.py --base http://127.0.0.1:8090 --full \
 
 - 接口新增字段：向后兼容，追加并在本文登记；接口语义/字段改名：升 `api` 版本（2）并同步 C1/C2/C3。
 - 本契约由 lead 维护；WP-C1/C2/C3 以本文为准，冲突时先停下来问 lead，不自行改协议。
+
+---
+
+## 11. 真机联调修订（2026-11-26，Wire API 仍为 v1）
+
+> 依 2026-11-26 在 Pi（192.168.50.100，Ubuntu 26.04 / ROS 2 Lyrical）上的实际联调修订，
+> 详细证据见 `docs/PC上位机_验收记录_2026-11-24.md` §9 与 `docs/evidence/`。
+> **HTTP/SSE 接口与字段未变**（`api=1` 不变）；以下为实现细节/新增可选参数。
+
+### 11.1 Nav2 激活编排修订（§5.3）
+
+原流程「controller → planner → behavior → bt → collision」在真机上会出现
+`bt_navigator` activate 随机失败（`compute_path_to_pose action server not available`
+或 `global_costmap/clear_entirely_global_costmap service server not available`），
+3 次重试仍失败（bt 的 BT 加载只给内部 action/service 节点 10 s 发现窗口）。
+改为：
+
+1. 关闭 `lifecycle_manager_nav2`；
+2. controller_server / planner_server configure+activate；
+3. 等待 `/compute_path_to_pose` action 就绪；
+4. **提前 configure behavior_server 与 bt_navigator（不激活）**；
+5. **prewarm 等待 20 s**（让 bt 子节点完成 DDS 发现）；
+6. 激活 behavior_server → 激活 bt_navigator（失败仍按 3 次/10 s 重试）；
+7. 等 `/navigate_to_pose` → 激活 collision_monitor。
+
+实测结果：台架 SIL 激活 6/6 成功，目标 SUCCEEDED。UI 在 prewarm 阶段进度可能停在
+`3/6` 约 20 s，属正常；`session/nav` 的 `phase` 文案会说明。
+
+### 11.2 新增可选参数（Pi 网关）
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--ros-log-dir DIR` | 空（继承） | 在 source 环境后为 bringup 子进程 `export ROS_LOG_DIR=DIR`。Pi 的 USB SSD 有 UAS 掉盘史，日志写 SSD 可能阻塞节点线程并放大 DDS 发现超时；台架建议 `/tmp/console_roslog`。 |
+| `--maps-dir DIR`（已有） | `/mnt/ssd/maps` | 台架可显式设为 `~/ros2_ws/maps`，避开 SSD。 |
+| `--maps-fallback DIR`（已有） | `~/ros2_ws/maps` | 同上。 |
+
+`acceptance_sil.sh` 默认已使用 `~/ros2_ws/maps` + `/tmp/console_sil_roslog`；
+手动启动网关做台架时也建议同样指定。
+
+### 11.3 外部栈检测宽限
+
+会话停止后 ROS 图缓存/Actor 发现可能仍有短暂残留，导致紧接着 `session/start`
+被误判为 `external_stack`。停会话后的外部栈检测宽限由 3 s 放宽到 **10 s**
+（`controller._session_grace_until`）。若现场仍偶发，重启网关或在 UI 提示后重试。
+
+### 11.4 真机联调修复的两个实现 bug
+
+1. `diagnostic_msgs/DiagnosticStatus.level` 在 rclpy 中实际可能是单字节 `bytes`
+   （`b'\x00'`）。原实现 `int(level)` 导致整帧 `/diagnostics` 丢弃；已兼容。
+2. `ros2_ws/src/raspbot_mock/src/fake_imu.cpp` 把 `sensor_msgs/Imu` 的 9 元素协方差
+   当 6×6（索引 0/7/35）写入，越界触发 libstdc++ 断言（Ubuntu 26.04/GCC15 上
+   SIGABRT）；已改为 0/4/8。该修复在 mock 包，不影响真车 IMU。
+
+### 11.5 已实测结论（Pi 台架）
+
+- `acceptance_sil.sh`：**PASS=44 / FAIL=0 / WARN=0 / SKIP=1**（退出码 0）。
+- 真硬件只读（`mode=base`，未发运动指令）：12 节点、`/scan`≈10 Hz、
+  `/odom`≈30 Hz、诊断新鲜、真实 IMU yaw/雷达距离经网关可见。
+- PC 程序（代理）→ Pi 网关：`contract_check` 8 PASS / 0 FAIL / 1 SKIP；
+  Web UI 无头截图 5/5、JS 错误 0，界面数据来自真实 Pi（SIL 会话）。
+- 真车运动/建图/导航 TC-C1..C5 仍需落地场地与人工监护，本次未做。
+
+### 11.6 现场环境注意事项
+
+- 联调期间 Wi-Fi 丢包 20–50%（PC↔Pi）、SSH banner 超时频发；建议靠近路由器、
+  换 5 GHz 或有线网络后再做实时遥控/导航验收。弱网下 UI 延迟升高属预期。
+- USB SSD 掉盘问题见 §11.2；长期运行建议修复硬件或避免把 ROS 日志/地图放在该盘。
+

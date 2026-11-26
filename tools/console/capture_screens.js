@@ -42,6 +42,7 @@ function parseArgs(argv) {
     initialpose: [1.5, 1.5, 0],
     goal: [2.5, 1.5, 0],
     keepRunning: false,
+    useMock: false,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -55,6 +56,7 @@ function parseArgs(argv) {
     else if (a === '--initialpose') args.initialpose = next().split(',').map(Number);
     else if (a === '--goal') args.goal = next().split(',').map(Number);
     else if (a === '--keep-running') args.keepRunning = true;
+    else if (a === '--use-mock') args.useMock = true;
     else throw new Error('未知参数: ' + a);
   }
   return args;
@@ -225,7 +227,7 @@ async function main() {
     await shot('pc_console_00_idle.png');
 
     // ---- 1. 建图（遥控探测揭示地图） ----
-    const start = await apiFetch(args.base, 'POST', '/api/session/start', { mode: 'slam' });
+    const start = await apiFetch(args.base, 'POST', '/api/session/start', { mode: 'slam', use_mock: args.useMock });
     if (start.status !== 200 && start.status !== 202) throw new Error('启动建图失败: ' + JSON.stringify(start));
     await waitState(args.base, (s) => s.session && s.session.state === 'running', 'slam running', 120000);
     await waitState(args.base, (s) => s.map && s.map.available, '首帧地图', 90000);
@@ -256,7 +258,7 @@ async function main() {
     if (!navMap) navMap = saved.body && (saved.body.yaml || saved.body.path);
     if (!navMap) throw new Error('找不到导航地图（demo_home）');
     log('导航地图: ' + navMap);
-    const navStart = await apiFetch(args.base, 'POST', '/api/session/start', { mode: 'nav', map: navMap });
+    const navStart = await apiFetch(args.base, 'POST', '/api/session/start', { mode: 'nav', map: navMap, use_mock: args.useMock });
     if (navStart.status !== 200 && navStart.status !== 202) throw new Error('启动导航失败: ' + JSON.stringify(navStart));
     await waitState(args.base, (s) => s.session && s.session.state === 'running', 'nav running', 120000);
     await waitState(args.base, (s) => s.nav && ['waiting_initialpose', 'activating', 'ready'].includes(s.nav.state), '导航入口', 120000);

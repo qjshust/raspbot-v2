@@ -1,44 +1,44 @@
 {
-  "base": "http://127.0.0.1:8099",
+  "base": "http://127.0.0.1:8090",
   "browser": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
   "shots": [
     {
       "file": "docs\\evidence\\pc_console_00_idle.png",
       "ok": true,
-      "size": 212724
+      "size": 207654
     },
     {
       "file": "docs\\evidence\\pc_console_01_mapping.png",
       "ok": true,
-      "size": 238018
+      "size": 278150
     },
     {
       "file": "docs\\evidence\\pc_console_02_nav_ready.png",
       "ok": true,
-      "size": 251173
+      "size": 263715
     },
     {
       "file": "docs\\evidence\\pc_console_03_navigating.png",
       "ok": true,
-      "size": 257411
+      "size": 273266
     },
     {
       "file": "docs\\evidence\\pc_console_04_estop.png",
       "ok": true,
-      "size": 278771
+      "size": 283912
     }
   ],
   "errors": [],
   "notes": [
-    "页面状态(readyState|文本长度|canvas 数): complete|958|1",
-    "[OK] pc_console_00_idle.png —— 208 KB",
-    "[OK] pc_console_01_mapping.png —— 232 KB",
-    "保存地图: evidence_1795565356806 -> \"E:\\\\code\\\\raspberrypi\\\\pc_console\\\\demo_maps\\\\evidence_1795565356806.yaml\"",
-    "导航地图: E:\\code\\raspberrypi\\pc_console\\demo_maps\\demo_home.yaml",
-    "[OK] pc_console_02_nav_ready.png —— 245 KB",
-    "发送目标: {\"x\":3.5,\"y\":1.5,\"yaw\":0,\"stamp\":1795565364.337,\"goal_id\":\"11d97bc38ae946e9be7d2afb89906f8b\"} HTTP 202",
-    "[OK] pc_console_03_navigating.png —— 251 KB",
-    "[OK] pc_console_04_estop.png —— 272 KB"
+    "页面状态(readyState|文本长度|canvas 数): complete|888|1",
+    "[OK] pc_console_00_idle.png —— 203 KB",
+    "[OK] pc_console_01_mapping.png —— 272 KB",
+    "保存地图: evidence_1795704732182 -> \"/home/ubuntu/ros2_ws/maps/evidence_1795704732182.yaml\"",
+    "导航地图: /home/ubuntu/ros2_ws/maps/evidence_1795704732182.yaml",
+    "[OK] pc_console_02_nav_ready.png —— 258 KB",
+    "发送目标: {\"x\":0.8,\"y\":0,\"yaw\":0,\"stamp\":1795704779.0001307,\"goal_id\":\"ca61b00b81a74b82ad58c5087a24cda2\"} HTTP 202",
+    "[OK] pc_console_03_navigating.png —— 267 KB",
+    "[OK] pc_console_04_estop.png —— 277 KB"
   ],
   "ok": true
 }

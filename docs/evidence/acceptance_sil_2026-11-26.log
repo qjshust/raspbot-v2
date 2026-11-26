@@ -1,0 +1,82 @@
+===== 0. 前置条件 =====
+  网关包：/home/ubuntu/ros2_ws/install/raspbot_console
+  端口：18099   建图超时：120s   导航超时：240s   token：未启用
+  [PASS] 前置条件（ROS 环境 + raspbot_console 可执行）
+  [PASS] 无双 owner（raspbot.service 未运行）
+  [PASS] 临时端口 18099 空闲
+
+===== 1. 启动网关（临时端口 18099） =====
+  PID=71662  日志=/tmp/console_sil_gateway.log
+  health: name=raspbot-console version=1.0.0 api=1
+  [PASS] /api/health 字段正确
+
+===== 2. /api/state schema 与 SSE =====
+  [PASS] /api/state 必填字段/schema 符合契约
+  [PASS] SSE 首帧含 retry
+  [PASS] SSE state 频点 40 帧 / ~3 s（10 Hz 量级）
+  [SKIP] SSE scan 事件（当前 idle 无扫描源，属正常）
+
+===== 3. 错误路径（idle） =====
+  [PASS] idle 遥控返回 409
+  [PASS] idle 目标返回 409
+  [PASS] nav 缺 map 返回 400
+  [PASS] 未知端点 404 JSON
+
+===== 4. 建图（use_mock:=true） =====
+  [PASS] session/start slam 已受理（HTTP 202）
+  [PASS] 建图会话 running（True mock）
+  [PASS] 地图出现：100x80 @ 0.05000000074505806 m/px
+  [PASS] map.png 可解码且尺寸与 meta 一致（100x80）
+
+===== 5. 遥控与 500 ms 看门狗 =====
+  [PASS] /cmd_vel_safe 收到遥控指令（linear.x=0.15）
+  [PASS] 遥控已生效（teleop.active=True，x: 0.0→0.252，y: 0.0→-0.0）
+  [PASS] 看门狗：0.5 s 后 teleop.active=false 且速度归零（vx=-0.0069768017011611365 wz=-1.8914762246007492e-16 cmd_vel_safe_x=0.0）
+  [PASS] teleop/stop 立即零速
+
+===== 6. 保存地图 =====
+  产物：/home/ubuntu/ros2_ws/maps/sil_console_20261126_144548.yaml  /  /home/ubuntu/ros2_ws/maps/sil_console_20261126_144548.pgm
+  [PASS] PGM+YAML 成对落盘
+  [PASS] PGM 尺寸 102x80 与保存 meta 一致
+  [PASS] YAML resolution=0.05000000074505806 与 meta 一致
+  [PASS] YAML 关键字段完整
+  [PASS] /api/maps 可见 sil_console_20261126_144548
+  [PASS] 重名保存返回 409
+
+===== 7. 导航（use_mock:=true + 保存的 mock 地图） =====
+  [PASS] 建图会话已停止（idle）
+  [PASS] session/start nav 已受理（HTTP 202）
+  [PASS] 导航会话 running（地图 /home/ubuntu/ros2_ws/maps/sil_console_20261126_144548.yaml )
+  [PASS] 导航等待初始位姿
+  [PASS] initialpose 已受理
+  [PASS] Nav2 激活完成 → ready（activation done=6/6）
+  [PASS] 导航目标已受理（x=0.8 y=0.0）
+  [PASS] 导航目标 SUCCEEDED（剩余=0.0 m，用时=3.982015937 s）
+
+----- 目标取消 -----
+  [PASS] 导航目标取消生效（goal_state=canceled）
+
+===== 8. 急停锁存 / 解除 =====
+  [PASS] 急停已锁存
+  [PASS] 急停后 state.estop.active=true / teleop.active=false
+  [PASS] 急停期间遥控被拒（409）
+  [PASS] 急停期间目标被拒（409）
+  [PASS] ROS 层 /cmd_vel_safe=0.0 ≤0.05（急停零速）
+  [PASS] 急停已解除
+
+===== 9. 停止会话 =====
+  [PASS] 会话已停止（idle）
+  [PASS] 会话日志无 Python Traceback
+  [PASS] 网关进程存活（无异常退出）
+  [PASS] 验收后 /api/health 仍正常
+
+===== 未在台架自动判定的项（需真车/人工） =====
+  - 真车 TC-C1..C5（落地场地、人工监护、AMCL 收敛与到点偏差）
+  - 急停 ≤0.3 s 四轮停转的机械时延（台架 mock 无电机）
+  - 雷达 74mm 扫描面盲区、无编码器漂移（见设计文档 §9 已知限制）
+  - Web UI 截图与视觉验收（PC 侧，由 lead 用浏览器完成）
+
+== 清理 ==
+
+== 结果：PASS=44 FAIL=0 WARN=0 SKIP=1 ==
+[PASS] acceptance_sil 全部通过

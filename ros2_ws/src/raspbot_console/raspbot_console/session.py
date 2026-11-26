@@ -121,8 +121,13 @@ def workspace_setup_expr(workspace):
 
 
 def build_launch_command(spec, workspace=DEFAULT_WORKSPACE,
-                         ros_setup=DEFAULT_ROS_SETUP):
-    """构造 ``bash -lc`` 启动命令（§5.2），返回 list[str] 供 Popen 使用。"""
+                         ros_setup=DEFAULT_ROS_SETUP, ros_log_dir=''):
+    """构造 ``bash -lc`` 启动命令（§5.2），返回 list[str] 供 Popen 使用。
+
+    ``ros_log_dir`` 非空时在 source 环境后显式 ``export ROS_LOG_DIR=<dir>``，
+    避免节点把日志写到慢速/不稳定的 SSD 上（Pi 上 /mnt/ssd UAS 掉盘会拖住
+    节点线程，进而导致 DDS 发现/lifecycle 激活超时）。
+    """
     if spec.mode not in MODE_LAUNCH:
         raise ValueError('未知会话模式: %r' % (spec.mode,))
     if spec.mode == 'nav' and not spec.map_path:
@@ -137,9 +142,13 @@ def build_launch_command(spec, workspace=DEFAULT_WORKSPACE,
         launch += ' use_camera:=true'
     if spec.use_perception:
         launch += ' use_perception:=true'
-    script = 'source %s && source %s && exec %s' % (
+    env_prefix = ''
+    if ros_log_dir:
+        env_prefix = 'export ROS_LOG_DIR=%s && ' % _shell_arg(str(ros_log_dir))
+    script = 'source %s && source %s && %sexec %s' % (
         _shell_arg(ros_setup or DEFAULT_ROS_SETUP),
         workspace_setup_expr(workspace),
+        env_prefix,
         launch,
     )
     return ['bash', '-lc', script]
@@ -179,6 +188,7 @@ class SessionManager:
 
     def __init__(self, workspace=DEFAULT_WORKSPACE,
                  ros_setup=DEFAULT_ROS_SETUP, *,
+                 ros_log_dir='',
                  timeout_s=120.0, stop_sigint_timeout_s=20.0,
                  stop_sigterm_timeout_s=5.0, session_log_maxlen=500,
                  attach=False, manage=True,
@@ -187,6 +197,7 @@ class SessionManager:
                  popen_factory=subprocess.Popen):
         self.workspace = workspace
         self.ros_setup = ros_setup or DEFAULT_ROS_SETUP
+        self.ros_log_dir = str(ros_log_dir or '')
         self.timeout_s = float(timeout_s)
         self.stop_sigint_timeout_s = float(stop_sigint_timeout_s)
         self.stop_sigterm_timeout_s = float(stop_sigterm_timeout_s)
@@ -336,7 +347,8 @@ class SessionManager:
         self._sigterm_sent = False
         self._sigkill_sent = False
         try:
-            command = build_launch_command(spec, self.workspace, self.ros_setup)
+            command = build_launch_command(spec, self.workspace, self.ros_setup,
+                                           self.ros_log_dir)
         except ValueError as exc:
             self._error = str(exc)
             self._set_state(STATE_ERROR, ERROR_MESSAGE, 0.0)

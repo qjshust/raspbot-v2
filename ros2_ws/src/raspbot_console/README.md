@@ -128,6 +128,7 @@ ros2 run raspbot_console console_bridge --attach --port 8080
 | `--max-sse`（`4`） | SSE 客户端上限，超出 503 |
 | `--workspace`（`~/ros2_ws`） | 会话启动时 source 的工作区 |
 | `--ros-setup`（`/opt/ros/lyrical/setup.bash`） | ROS 环境脚本 |
+| `--ros-log-dir DIR`（空=继承） | source 后为 bringup 子进程 `export ROS_LOG_DIR`；SSD 会掉盘的台架建议 `/tmp/console_roslog`，避免日志 I/O 阻塞节点线程 |
 | `--maps-dir`（`/mnt/ssd/maps`） | 地图主目录 |
 | `--maps-fallback`（`~/ros2_ws/maps`） | 地图回退目录 |
 | `--attach` | 附加外部 ROS 栈：`managed=false`，start/stop 返回 409 |
@@ -264,7 +265,17 @@ estop/session 409/map 404/PNG/保存/导航流程/token/CORS/405/请求体上限
 
 ---
 
-## 6. 无法离线验证项（本机无 ROS 2、Pi 当前离线）
+## 6. 离线未验证项与真机联调状态（2026-11-26 更新）
+
+> **2026-11-26 已在真机（Pi 5 / 192.168.50.100）完成**：部署+colcon 构建、
+> 118 项纯逻辑单测、台架 SIL `acceptance_sil.sh` **PASS=44/FAIL=0**（建图→保存→
+> 导航 initialpose→激活 6/6→目标 SUCCEEDED→取消→急停）、真硬件 `mode=base` 只读
+> 遥测（12 节点、/scan≈10 Hz、/odom≈30 Hz、诊断新鲜）、PC 端代理+Web UI 联调
+> （截图 5/5、JS 错误 0）。**仍未验证**：真车落地运动/建图/导航到达精度、真车急停
+> 机械时延、带 token 的浏览器 `<img>` 场景、systemd 方式 A/B 的实际部署。
+> 详细证据：`docs/PC上位机_验收记录_2026-11-24.md` §9、`docs/evidence/`。
+
+以下为最初（Pi 离线时）列出的未验证项，保留供后续复查：
 
 以下按“代码按 rclpy/ROS 文档与仓库既有事实编写，但只能在 Pi 上实测确认”列出：
 

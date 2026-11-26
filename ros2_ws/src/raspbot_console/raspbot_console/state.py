@@ -101,6 +101,9 @@ def default_ready():
 
 
 def _diag_level_name(level):
+    # 兼容 rclpy 把 diagnostic_msgs ``byte level`` 反序列化成 bytes(b'\x00') 的情况
+    if isinstance(level, (bytes, bytearray)):
+        level = level[0] if len(level) else 0
     try:
         return _DIAG_LEVEL_NAME.get(int(level), 'unknown')
     except (TypeError, ValueError):

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 RASPBOT-V2 WP-H
+// Copyright (c) 2026 RASPBOT-V2 WP-H
 // fake_imu — 合成 IMU 节点（FR-H-04 / SW-I04），C++ 版。
 //
 // 行为与 legacy_python/raspbot_mock/fake_imu.py 一致：
@@ -67,17 +67,20 @@ private:
     msg.header.frame_id = frame_id_;
     msg.orientation.z = std::sin(yaw / 2.0);
     msg.orientation.w = std::cos(yaw / 2.0);
-    // 协方差对角线：x/y = roll/pitch（tilt），z = yaw
+    // 协方差对角线：x/y = roll/pitch（tilt），z = yaw。
+    // sensor_msgs/Imu 的协方差是 float64[9]（3x3 行主序），行主序对角线索引
+    // 是 0/4/8；此前写成 35 是 6x6（Odometry）的约定，会越界触发
+    // libstdc++ 断言（Ubuntu 26.04/GCC15 上 fake_imu 直接 SIGABRT）。
     msg.orientation_covariance[0] = tilt_var_;
-    msg.orientation_covariance[7] = tilt_var_;
-    msg.orientation_covariance[35] = yaw_var_;
+    msg.orientation_covariance[4] = tilt_var_;
+    msg.orientation_covariance[8] = yaw_var_;
     msg.angular_velocity.z = wz_;
     msg.angular_velocity_covariance[0] = gyro_var_;
-    msg.angular_velocity_covariance[7] = gyro_var_;
-    msg.angular_velocity_covariance[35] = gyro_var_;
+    msg.angular_velocity_covariance[4] = gyro_var_;
+    msg.angular_velocity_covariance[8] = gyro_var_;
     msg.linear_acceleration_covariance[0] = accel_var_;
-    msg.linear_acceleration_covariance[7] = accel_var_;
-    msg.linear_acceleration_covariance[35] = accel_var_;
+    msg.linear_acceleration_covariance[4] = accel_var_;
+    msg.linear_acceleration_covariance[8] = accel_var_;
     pub_->publish(msg);
   }
 

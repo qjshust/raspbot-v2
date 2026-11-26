@@ -66,6 +66,20 @@ LIFECYCLE_STATE_NAMES = {0: 'unknown', 1: 'unconfigured', 2: 'inactive',
 #: lifecycle manager 节点名（nav2.launch.py 中固定）
 MANAGER_NODE = 'lifecycle_manager_nav2'
 
+
+def _coerce_diag_level(value):
+    """DiagnosticStatus.level → int。
+
+    真机上 rclpy 可能把 ``byte level`` 反序列化成单字节 bytes，也可能给 int；
+    两种都兼容，避免 ``int(b'\\x00')`` 抛异常导致整帧 /diagnostics 被丢弃。
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return value[0] if len(value) else 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
 #: Nav2 需要按顺序激活的节点（与 nav2.launch.py 的 node_names 一致）
 NAV2_NODES = ('controller_server', 'planner_server', 'behavior_server',
               'bt_navigator', 'collision_monitor')
@@ -127,24 +141,45 @@ def _action_ready(client):
 # ---------------------------------------------------------------------------
 
 class _NavActivation:
-    """§5.3 的等价实现：manager shutdown → 5 个节点 configure/activate。
+    """§5.3 的等价实现：manager shutdown → 分阶段 configure/activate 5 个节点。
 
     顺序与 ``.dsh/selftest/activate_nav2.sh`` 一致：controller_server →
-    planner_server → 等 /compute_path_to_pose → behavior_server → bt_navigator
-    → 等 /navigate_to_pose → collision_monitor。激活用 lifecycle 服务，
-    每步 configure 15 s / activate 30 s 超时，失败最多重试 3 次。
+    planner_server → 等 /compute_path_to_pose → **提前 configure behavior/bt**
+    → 等待 DDS 发现（prewarm）→ 激活 behavior → 激活 bt_navigator →
+    等 /navigate_to_pose → collision_monitor。
+
+    真机实测（2026-11-26）：bt_navigator 在 activate 时会为 BT 里的 action/
+    service 节点等待 10 s 发现窗口；若它自己的子节点刚创建、planner 的
+    action server 又还没被它发现，activate 会返回 success=false（错误：
+    "compute_path_to_pose action server not available" 或
+    "global_costmap/clear_entirely_global_costmap service server not available"）。
+    因此这里把 behavior/bt 的 configure 提前，并在 activate 前留出
+    ``PREWARM_SECONDS`` 让 bt 子节点完成 DDS 发现，再执行 activate。
     """
 
     STEPS = (
-        ('manager_shutdown', '关闭 lifecycle_manager_nav2（best-effort）'),
-        ('controller_server', '激活 controller_server'),
-        ('planner_server', '激活 planner_server'),
-        ('wait_planner', '等待 /compute_path_to_pose action'),
-        ('behavior_server', '激活 behavior_server'),
-        ('bt_navigator', '激活 bt_navigator'),
-        ('wait_navigator', '等待 /navigate_to_pose action'),
-        ('collision_monitor', '激活 collision_monitor'),
+        ('manager_shutdown', '关闭 lifecycle_manager_nav2（best-effort）', 'manager'),
+        ('controller_server', '激活 controller_server', 'activate'),
+        ('planner_server', '激活 planner_server', 'activate'),
+        ('wait_planner', '等待 /compute_path_to_pose action', 'wait'),
+        ('behavior_configure', '配置 behavior_server', 'configure'),
+        ('bt_configure', '配置 bt_navigator', 'configure'),
+        ('prewarm', '等待 Nav2 DDS 发现（预热点）', 'prewarm'),
+        ('behavior_activate', '激活 behavior_server', 'activate'),
+        ('bt_activate', '激活 bt_navigator', 'activate'),
+        ('wait_navigator', '等待 /navigate_to_pose action', 'wait'),
+        ('collision_activate', '激活 collision_monitor', 'activate'),
     )
+    #: 步骤 key → lifecycle 节点名
+    NODE_STEP_MAP = {
+        'controller_server': 'controller_server',
+        'planner_server': 'planner_server',
+        'behavior_configure': 'behavior_server',
+        'behavior_activate': 'behavior_server',
+        'bt_configure': 'bt_navigator',
+        'bt_activate': 'bt_navigator',
+        'collision_activate': 'collision_monitor',
+    }
     TOTAL = 6  # 进度条总步数：lifecycle_manager + 5 个 Nav2 节点
 
     CONFIGURE_TIMEOUT = 15.0
@@ -152,9 +187,10 @@ class _NavActivation:
     QUERY_TIMEOUT = 10.0
     WAIT_PLANNER_TIMEOUT = 10.0
     WAIT_NAVIGATOR_TIMEOUT = 15.0
+    PREWARM_SECONDS = 20.0
     MANAGER_TIMEOUT = 5.0
     RETRY_LIMIT = 3
-    RETRY_DELAY = 8.0
+    RETRY_DELAY = 10.0
 
     def __init__(self, runtime):
         self.runtime = runtime
@@ -164,6 +200,7 @@ class _NavActivation:
         self.success = False
         self.message = ''
         self.phase = self.STEPS[0][1]
+        self._step_action = self.STEPS[0][2]
         self._lifecycle = {}
         self._stage = 'enter'
         self._deadline = 0.0
@@ -188,13 +225,15 @@ class _NavActivation:
 
     # -- 步骤分发 -------------------------------------------------------
     def _advance(self, now):
-        step = self.STEPS[self.index][0]
-        if step == 'manager_shutdown':
+        key, _desc, action = self.STEPS[self.index]
+        if action == 'manager':
             self._step_manager(now)
-        elif step.startswith('wait_'):
-            self._step_wait(now, step)
+        elif action == 'prewarm':
+            self._step_prewarm(now)
+        elif action == 'wait':
+            self._step_wait(now, key)
         else:
-            self._step_node(now, step)
+            self._step_node(now, self.NODE_STEP_MAP[key], action)
 
     def _next_step(self):
         self.index += 1
@@ -207,6 +246,7 @@ class _NavActivation:
             self._complete()
             return
         self.phase = self.STEPS[self.index][1]
+        self._step_action = self.STEPS[self.index][2]
         self._report()
 
     def _report(self, phase=None):
@@ -227,6 +267,9 @@ class _NavActivation:
             return
         self.finished = True
         self.success = True
+        # 最后一步完成后把进度补满，避免 UI 停留在 5/6。
+        self.done = self.TOTAL
+        self._report(phase='激活完成')
         self.phase = '激活完成'
         self.runtime.controller.on_activation_done(
             True, '', dict(self._lifecycle))
@@ -301,7 +344,25 @@ class _NavActivation:
             self._fail('%.0f s 内未发现 /navigate_to_pose action server'
                        % self.WAIT_NAVIGATOR_TIMEOUT)
 
-    def _step_node(self, now, name):
+    def _step_prewarm(self, now):
+        """固定等待窗口：让 bt_navigator 子节点完成对 planner 端点的 DDS 发现。
+
+        真机复现（2026-11-26）：bt_navigator 的 activate 只给 BT 内部 action/
+        service 节点 10 s 发现窗口；若 behavior/bt 刚 configure 完就立刻
+        activate，会随机出现 "compute_path_to_pose action server not available"
+        或 "global_costmap/clear_entirely_global_costmap service server not
+        available"，且 3 次重试均失败。提前 configure + 本 prewarm 窗口可覆盖
+        该窗口（实测 CLI 侧该端点出现有数十秒延迟）。
+        """
+        if self._stage == 'enter':
+            self._stage = 'wait'
+            self._deadline = now + self.PREWARM_SECONDS
+            self._report(phase='等待 Nav2 DDS 发现（%.0f s）' % self.PREWARM_SECONDS)
+            return
+        if now >= self._deadline:
+            self._next_step()
+
+    def _step_node(self, now, name, action):
         clients = self._clients.get(name)
         if clients is None:
             clients = {
@@ -330,7 +391,7 @@ class _NavActivation:
                 self._op_failed(name, 'lifecycle 服务调用失败: %r' % exc)
                 return
             if kind == 'query':
-                self._on_query_result(name, response, now)
+                self._on_query_result(name, action, response, now)
             else:
                 self._on_change_result(name, kind, response, now)
             return
@@ -363,7 +424,7 @@ class _NavActivation:
                 else self.ACTIVATE_TIMEOUT)
             return
 
-    def _on_query_result(self, name, response, now):
+    def _on_query_result(self, name, action, response, now):
         state_id = 0
         try:
             state_id = int(response.current_state.id)
@@ -371,7 +432,11 @@ class _NavActivation:
             state_id = 0
         self._lifecycle[name] = LIFECYCLE_STATE_NAMES.get(state_id, 'unknown')
         if state_id == STATE_ACTIVE:
-            self._node_done(name)
+            if action == 'activate':
+                self._node_done(name)
+            else:
+                # 已 configure + active：configure 目标直接达成
+                self._next_step()
             return
         if state_id == STATE_UNCONFIGURED:
             self._stage = 'configure'
@@ -379,6 +444,9 @@ class _NavActivation:
             self._report(phase='配置 %s' % name)
             return
         if state_id == STATE_INACTIVE:
+            if action == 'configure':
+                self._next_step()
+                return
             self._stage = 'activate'
             self._deadline = now + self.ACTIVATE_TIMEOUT
             self._report(phase='激活 %s' % name)
@@ -1251,7 +1319,9 @@ class RosRuntime:
             for status in msg.status:
                 items.append({
                     'name': str(status.name),
-                    'level': int(status.level),
+                    # rclpy 对 diagnostic_msgs 的 ``byte level`` 可能反序列化为
+                    # bytes（b'\x00'）而非 int，这里统一归一化，避免整包解析失败。
+                    'level': _coerce_diag_level(status.level),
                     'message': str(status.message),
                     'hardware_id': str(status.hardware_id),
                 })

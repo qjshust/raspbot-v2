@@ -105,7 +105,9 @@ bash ~/tools/console/install_service.sh --start
 |---|---|
 | ![建图](docs/evidence/pc_console_01_mapping.png) | ![导航](docs/evidence/pc_console_03_navigating.png) |
 
-> 当前 Pi 离线：网关的 ROS 运行时部分尚未真机联调；离线验证（PC 程序 64 项 unittest、网关纯逻辑 118 项、Web 19 项 Node 测试、演示模式契约全流程 33 项）全部通过。Pi 上线后按验收记录 §6 执行台架 SIL 与真车 TC-C1~C5。
+> 上图为 2026-11-26 经 PC 代理连接真 Pi 网关（台架 SIL mock 会话）由无头 Edge 采集，界面数据来自 Pi。
+
+> **Pi 真机联调（2026-11-26，192.168.50.100）已完成**：网关在 Pi 上构建运行，台架 SIL `acceptance_sil.sh` **PASS=44/FAIL=0**（建图→保存→导航激活 6/6→目标 SUCCEEDED→取消→急停），真实硬件 `mode=base` 只读链路（12 节点、`/scan`≈10 Hz、`/odom`≈30 Hz、真实 IMU/雷达）经网关可见；PC 代理 + Web UI 连接真网关并完成 5/5 截图（JS 错误 0）。**仍未做**真车落地建图/导航 TC-C1~C5（需场地与人工监护）。详见 [验收记录 §9](docs/PC上位机_验收记录_2026-11-24.md)。
 
 ---
 
@@ -249,7 +251,7 @@ bash .dsh/selftest/09_perf.sh
 - 相机：`v4l2_camera` 不支持 MJPG（本机），固定 YUYV 640×480@15。
 - Nav2 生命周期不 autostart（需先给初始位姿），用 `activate_nav2.sh` 顺序激活。
 - Servo 2（tilt）机械限位 ≤110°，勿命令 180°。
-- **PC 上位机（2026-11-25 新增）**：交付时 Pi 离线，`raspbot_console` 的 ROS 运行时部分（rclpy action/TF/lifecycle、真实 bringup 时序、SSE 经 PC 代理）尚未真机联调；离线测试与演示模式全流程已通过。Pi 上线后按 `docs/PC上位机_验收记录_2026-11-24.md` §6 执行 SIL 与真车验收。
+- **PC 上位机（2026-11-25 新增，2026-11-26 真机联调）**：`raspbot_console` 已在 Pi 上构建运行，台架 SIL 全通过、真硬件 base 只读遥测通过、PC↔Pi 代理与 Web UI 联调通过。**未验证**：真车落地运动/建图/导航 TC-C1~C5、急停机械时延。另注意：本机 USB SSD（`/mnt/ssd`）有 UAS 掉盘历史，ROS 日志写 SSD 可阻塞节点线程并导致 Nav2/DDS 激活超时；台架建议 `--ros-log-dir /tmp/console_roslog --maps-dir ~/ros2_ws/maps`（`acceptance_sil.sh` 已内置）。Wi-Fi 质量差时 UI/SSH 延迟明显升高。详见 `docs/PC上位机_验收记录_2026-11-24.md` §9。
 - **PC 网关与 systemd bringup 二选一**：网关托管 bringup 时先 `sudo systemctl disable --now raspbot.service`；若 systemd 已托管 bringup，网关必须加 `--attach`，否则两者会抢同一 ROS 图。
 
 ## 仓库结构

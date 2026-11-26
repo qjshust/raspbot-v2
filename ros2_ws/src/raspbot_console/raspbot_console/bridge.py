@@ -85,6 +85,7 @@ def run(config):
     session = SessionManager(
         workspace=config.workspace,
         ros_setup=config.ros_setup,
+        ros_log_dir=config.ros_log_dir,
         timeout_s=config.session_timeout_s,
         stop_sigint_timeout_s=config.stop_sigint_timeout_s,
         stop_sigterm_timeout_s=config.stop_sigterm_timeout_s,

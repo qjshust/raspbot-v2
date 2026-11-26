@@ -207,7 +207,10 @@ class Controller:
             self.state.reset_nav()
             self._activation_running = False
             self._safe_stop_motion()
-            self._session_grace_until = self._now() + 3.0
+            # 真机联调（2026-11-26）：ROS 图缓存/发现残留可能在会话停止后
+            # 仍短暂报告 bringup 节点，导致紧接着 start 另一个模式被误判为
+            # external_stack；宽限从 3 s 放宽到 10 s。
+            self._session_grace_until = self._now() + 10.0
             self._log('info', '会话已停止，回到空闲')
         elif new_state == session_mod.STATE_ERROR:
             self._cancel_nav_goal_internal('会话异常')

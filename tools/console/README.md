@@ -188,3 +188,29 @@ Pi:  bash ~/tools/console/acceptance_sil.sh       # 台架 SIL 全流程
 PC:  python tools/console/contract_check.py --base http://<pi>:8080 --full  # 真网关契约
 PC:  pc_console\start.bat                         # 连真车使用
 ```
+
+---
+
+## 8. 2026-11-26 真机联调结果与本目录脚本状态
+
+在 Pi 5（`ubuntu@192.168.50.100`，Ubuntu 26.04 / ROS 2 Lyrical）上实测：
+
+| 脚本 | 状态 | 结果 |
+|---|---|---|
+| `deploy.ps1` 等价流程 | ✅ 已执行 | `raspbot_console` + `raspbot_mock` colcon 构建成功；118 项纯逻辑单测 OK |
+| `acceptance_sil.sh` | ✅ 已执行 | **PASS=44 / FAIL=0 / WARN=0 / SKIP=1**（建图→保存→导航激活 6/6→目标 SUCCEEDED→取消→急停），退出码 0；日志归档 `docs/evidence/acceptance_sil_2026-11-26.log` |
+| `contract_check.py` | ✅ 已执行 | 直连 Pi 网关 8 PASS/0 FAIL/1 SKIP；经 PC 代理同样通过（`docs/evidence/contract_check_pc_proxy_2026-11-26.txt`） |
+| `capture_screens.js` | ✅ 已执行 | 经 PC 代理连接真网关 + SIL 会话：5/5 截图、JS 错误 0（`--use-mock` 已支持，见 `--help`） |
+| `install_service.sh` | ⚠️ 未执行 | 本次手动 nohup 启动网关，未安装 systemd 服务（避免改动开机配置） |
+
+台架要点（脚本已内置）：
+
+- 地图保存到 `~/ros2_ws/maps`、ROS 日志到 `/tmp/console_sil_roslog`，**不用 USB SSD**
+  （本机 `/mnt/ssd` 有 UAS 掉盘史，日志 I/O 会拖住节点线程并放大 Nav2/DDS 激活超时）。
+- 网关激活 Nav2 前会提前 configure behavior/bt 并 **prewarm 20 s**；SIL 下可稳定 6/6。
+- 停会话后外部栈检测有 10 s 宽限；紧接着切换模式若仍偶发 409 `external_stack`，
+  重启网关重试。
+- Wi-Fi 差（丢包 20–50%）会影响 SSH/HTTP；脚本的 curl 超时较长，失败时先确认网络。
+
+真车落地运动/建图/导航（TC-C1~C5）与急停机械时延仍需场地+人工监护，**未在本次联调执行**。
+

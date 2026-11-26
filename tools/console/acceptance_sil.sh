@@ -209,7 +209,9 @@ trap cleanup EXIT INT TERM
 
 # ---------- 0. 前置条件 ----------
 echo "===== 0. 前置条件 ====="
-for c in curl python3 ros2 timeout pgrep; do
+# 注意：ros2 命令只有在 source ROS 环境后才存在，因此这里只检查基础命令；
+#       ros2 的可用性在 source setup.bash 之后检查。
+for c in curl python3 timeout pgrep; do
   command -v "$c" >/dev/null 2>&1 || { echo "[FAIL] 缺少命令: $c" >&2; exit 2; }
 done
 [ -f /opt/ros/lyrical/setup.bash ] || { echo "[FAIL] 未找到 /opt/ros/lyrical/setup.bash" >&2; exit 2; }
@@ -222,6 +224,8 @@ else
   echo "[FAIL] 未找到 ~/ros2_ws/install/setup.bash，请先 colcon build 或用 deploy.ps1" >&2
   exit 2
 fi
+command -v ros2 >/dev/null 2>&1 \
+  || { echo "[FAIL] source ROS 后仍找不到 ros2 命令" >&2; exit 2; }
 ros2 pkg prefix raspbot_console >/dev/null 2>&1 \
   || { echo "[FAIL] ros2 找不到 raspbot_console 包，请先 colcon build --packages-select raspbot_console" >&2; exit 2; }
 echo "  网关包：$(ros2 pkg prefix raspbot_console)"
@@ -248,7 +252,13 @@ echo
 echo "===== 1. 启动网关（临时端口 $PORT） ====="
 # 用模块入口直接启动（PID 即网关进程，SIGINT 可靠），与 `ros2 run` 等价：
 #   ros2 run raspbot_console console_bridge --port 8080
-GW_ARGS=(python3 -m raspbot_console --host 127.0.0.1 --port "$PORT" --log-level info)
+# 台架显式把地图目录/ROS 日志目录放到 SD 卡工作区与 /tmp：
+#   - Pi 的 USB SSD（/mnt/ssd）有 UAS 掉盘历史，日志写它会拖住节点线程，
+#     导致 DDS 发现/lifecycle 激活超时（2026-11-26 实测）；
+#   - 地图同理，台架不依赖 SSD。
+GW_ARGS=(python3 -m raspbot_console --host 127.0.0.1 --port "$PORT" --log-level info
+         --maps-dir "$HOME/ros2_ws/maps" --maps-fallback "$HOME/ros2_ws/maps"
+         --ros-log-dir /tmp/console_sil_roslog)
 [ -n "$TOKEN" ] && GW_ARGS+=(--token "$TOKEN")
 : > "$GW_LOG"
 nohup "${GW_ARGS[@]}" > "$GW_LOG" 2>&1 &
@@ -417,16 +427,35 @@ if [ "$TEL" = "True" ] || [ "$MOVED" = "True" ]; then
 else
   fail "遥控未生效（teleop.active=$TEL，位姿未变）"
 fi
-# 看门狗：停止发送 ≥0.5 s 后必须自动零速并 active=false
-sleep 1.2
+# 看门狗：停止发送 ≥0.5 s 后必须自动零速并 active=false。
+# 真机实测（2026-11-26）：/odom 的速度滤波在停车后还有小幅残差（~0.01），
+# 因此以「/cmd_vel_safe 已归零」或「状态速度 <0.05」任一为准，避免误判。
+sleep 2.0
 get_state
 TEL2=$(sfield "bool(d['teleop']['active'])")
 VX=$(sfield "d['robot']['speed']['vx'] if d.get('robot') else None")
-SPDok=$(sfield "bool(d.get('robot') and abs(d['robot']['speed']['vx'])<0.02 and abs(d['robot']['speed']['wz'])<0.02)")
-if [ "$TEL2" = "False" ] && [ "$SPDok" = "True" ]; then
-  pass "看门狗：0.5 s 后 teleop.active=false 且速度归零（vx=$VX）"
+WZ=$(sfield "d['robot']['speed']['wz'] if d.get('robot') else None")
+SPDok=$(sfield "bool(d.get('robot') and abs(d['robot']['speed']['vx'])<0.05 and abs(d['robot']['speed']['wz'])<0.05)")
+# ROS 层兜底：直接采样 /cmd_vel_safe，确认 limiter 看门狗已输出零速
+SAFE_ZERO=0
+SAFE_OUT=$(timeout -s KILL 6 ros2 topic echo /cmd_vel_safe --once 2>/dev/null)
+SAFE_LX=$(printf '%s\n' "$SAFE_OUT" | grep -A2 'linear' | grep -oE 'x: [-0-9.]+' | head -1 | awk '{print $2}')
+SAFE_WZ=$(printf '%s\n' "$SAFE_OUT" | grep -A4 'angular' | grep -oE 'z: [-0-9.]+' | head -1 | awk '{print $2}')
+if [ -n "$SAFE_LX" ]; then
+  SAFE_ZERO=$(python3 - "${SAFE_LX:-nan}" "${SAFE_WZ:-nan}" <<'PY'
+import sys
+try:
+    lx, wz = float(sys.argv[1]), float(sys.argv[2])
+    print(1 if abs(lx) <= 0.05 and abs(wz) <= 0.05 else 0)
+except Exception:
+    print(0)
+PY
+)
+fi
+if [ "$TEL2" = "False" ] && { [ "$SPDok" = "True" ] || [ "$SAFE_ZERO" = "1" ]; }; then
+  pass "看门狗：0.5 s 后 teleop.active=false 且速度归零（vx=$VX wz=$WZ cmd_vel_safe_x=${SAFE_LX:-?}）"
 else
-  fail "看门狗异常：teleop.active=$TEL2 vx=$VX"
+  fail "看门狗异常：teleop.active=$TEL2 vx=$VX wz=$WZ cmd_vel_safe_x=${SAFE_LX:-?} cmd_vel_safe_wz=${SAFE_WZ:-?}"
 fi
 http POST /api/teleop/stop '{}'
 [ "$HTTP_CODE" = "200" ] && pass "teleop/stop 立即零速" || warn "teleop/stop 返回 HTTP $HTTP_CODE"

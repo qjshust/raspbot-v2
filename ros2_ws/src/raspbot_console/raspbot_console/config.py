@@ -27,6 +27,10 @@ DEFAULTS = {
     'ros_setup': '/opt/ros/lyrical/setup.bash',
     'maps_dir': '/mnt/ssd/maps',
     'maps_fallback': '~/ros2_ws/maps',
+    #: bringup 子进程的 ROS 日志目录；空 = 继承网关环境。
+    #: 本机 SSD（/mnt/ssd）历史上出现 UAS I/O 掉盘，日志写它可能拖住节点线程，
+    #: 联调/台架建议显式传 ``/tmp/roslog``（tmpfs）。
+    'ros_log_dir': '',
     # 会话
     'attach': False,
     'session_manage': True,
@@ -181,6 +185,9 @@ def build_argument_parser():
                         help='地图主目录（默认 /mnt/ssd/maps）')
     parser.add_argument('--maps-fallback', default=None,
                         help='地图回退目录（默认 ~/ros2_ws/maps）')
+    parser.add_argument('--ros-log-dir', default=None,
+                        help='bringup 子进程 ROS 日志目录（默认继承；'
+                             '台架建议 /tmp/roslog，避免 SSD I/O 故障拖住节点）')
     parser.add_argument('--attach', action='store_true', default=None,
                         help='附加到外部已启动的 ROS 栈（托管=false，start/stop 409）')
     parser.add_argument('--no-session-manage', dest='session_manage',
