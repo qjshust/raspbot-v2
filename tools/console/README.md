@@ -201,7 +201,7 @@ PC:  pc_console\start.bat                         # 连真车使用
 | `acceptance_sil.sh` | ✅ 已执行 | **PASS=44 / FAIL=0 / WARN=0 / SKIP=1**（建图→保存→导航激活 6/6→目标 SUCCEEDED→取消→急停），退出码 0；日志归档 `docs/evidence/acceptance_sil_2026-11-26.log` |
 | `contract_check.py` | ✅ 已执行 | 直连 Pi 网关 8 PASS/0 FAIL/1 SKIP；经 PC 代理同样通过（`docs/evidence/contract_check_pc_proxy_2026-11-26.txt`） |
 | `capture_screens.js` | ✅ 已执行 | 经 PC 代理连接真网关 + SIL 会话：5/5 截图、JS 错误 0（`--use-mock` 已支持，见 `--help`） |
-| `install_service.sh` | ⚠️ 未执行 | 本次手动 nohup 启动网关，未安装 systemd 服务（避免改动开机配置） |
+| `install_service.sh` | ✅ 已执行（2026-11-27） | 安装 `raspbot-console.service` 并 `enable --now`；服务 `enabled+active`，开机自启、崩溃 3 s 重启；默认 `--maps-dir ~/ros2_ws/maps --ros-log-dir /tmp/console_roslog`（避开 USB SSD），已实测 `systemctl restart` 后 PC 代理自动恢复 |
 
 台架要点（脚本已内置）：
 

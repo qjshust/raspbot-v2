@@ -3,10 +3,12 @@
 #
 # 用法（在 Pi 上，需要 sudo；本脚本会 sudo）：
 #   bash ~/tools/console/install_service.sh                  # 安装并 enable，不立即启动
-#   bash ~/tools/console/install_service.sh --start          # 安装并立即启动
+#   bash ~/tools/console/install_service.sh --start          # 安装并立即启动（推荐）
 #   bash ~/tools/console/install_service.sh --attach         # 附加模式（外部已有 bringup 栈）
 #   bash ~/tools/console/install_service.sh --port 8080 --token mytoken
 #   bash ~/tools/console/install_service.sh --start --force  # 允许与 raspbot.service 同时启用
+#   可选：--maps-dir DIR（默认 ~/ros2_ws/maps）、--maps-fallback DIR、
+#         --ros-log-dir DIR（默认 /tmp/console_roslog，避开易掉盘的 /mnt/ssd）
 #
 # 说明：
 # - 服务安装为 raspbot-console.service，开机自启，崩溃 3 s 后重启。
@@ -21,6 +23,10 @@ ATTACH=0
 START=0
 FORCE=0
 UNINSTALL=0
+# 台架默认避开 USB SSD（本机 /mnt/ssd 有 UAS 掉盘史：日志 I/O 会阻塞节点线程）
+MAPS_DIR="$HOME/ros2_ws/maps"
+MAPS_FALLBACK="$HOME/ros2_ws/maps"
+ROS_LOG_DIR="/tmp/console_roslog"
 UNIT=/etc/systemd/system/raspbot-console.service
 
 usage() {
@@ -31,6 +37,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) PORT="${2:?}"; shift 2 ;;
     --token) TOKEN="${2:?}"; shift 2 ;;
+    --maps-dir) MAPS_DIR="${2:?}"; shift 2 ;;
+    --maps-fallback) MAPS_FALLBACK="${2:?}"; shift 2 ;;
+    --ros-log-dir) ROS_LOG_DIR="${2:?}"; shift 2 ;;
     --attach) ATTACH=1; shift ;;
     --start) START=1; shift ;;
     --force) FORCE=1; shift ;;
@@ -74,6 +83,7 @@ fi
 EXTRA=""
 [[ "$ATTACH" -eq 1 ]] && EXTRA="$EXTRA --attach"
 [[ -n "$TOKEN" ]] && EXTRA="$EXTRA --token $TOKEN"
+EXTRA="$EXTRA --maps-dir $MAPS_DIR --maps-fallback $MAPS_FALLBACK --ros-log-dir $ROS_LOG_DIR"
 
 echo "== 写入 $UNIT =="
 sudo tee "$UNIT" > /dev/null <<EOF
@@ -85,8 +95,8 @@ Wants=network-online.target
 [Service]
 User=$USER
 Group=$USER
-Environment=ROS_LOG_DIR=/mnt/ssd/roslog
-ExecStartPre=/bin/bash -lc 'mkdir -p /mnt/ssd/roslog 2>/dev/null || true'
+Environment=HOME=/home/$USER
+ExecStartPre=/bin/mkdir -p $ROS_LOG_DIR
 ExecStart=/bin/bash -lc 'source /opt/ros/lyrical/setup.bash && source $WS/install/setup.bash && exec ros2 run raspbot_console console_bridge --host 0.0.0.0 --port $PORT$EXTRA'
 Restart=always
 RestartSec=3
