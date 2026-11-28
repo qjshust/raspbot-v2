@@ -48,6 +48,9 @@ RaspbotBaseNode::RaspbotBaseNode(const rclcpp::NodeOptions& options)
   this->declare_parameter<int64_t>("max_pwm", 255);
   this->declare_parameter<int64_t>("deadband_pwm", 25);
   this->declare_parameter<std::vector<int64_t>>("wheel_signs", {1, 1, 1, 1});
+  // 每轮速度微调系数（标定个体电机/轮径差异；1.0=不修正）
+  this->declare_parameter<std::vector<double>>("wheel_trim",
+                                               {1.0, 1.0, 1.0, 1.0});
   this->declare_parameter<double>("control_rate", 30.0);
   this->declare_parameter<double>("sensor_rate", 5.0);
   this->declare_parameter<double>("cmd_timeout", 0.5);
@@ -71,6 +74,16 @@ RaspbotBaseNode::RaspbotBaseNode(const rclcpp::NodeOptions& options)
     }
     for (std::size_t i = 0; i < 4; ++i) {
       wheel_signs_[i] = static_cast<int>(signs[i]);
+    }
+  }
+  {
+    const auto trim = this->get_parameter("wheel_trim").as_double_array();
+    if (trim.size() != 4) {
+      throw std::invalid_argument(
+          "wheel_trim must have exactly 4 entries (L1 L2 R1 R2)");
+    }
+    for (std::size_t i = 0; i < 4; ++i) {
+      wheel_trim_[i] = trim[i];
     }
   }
   control_rate_ = this->get_parameter("control_rate").as_double();
@@ -220,7 +233,7 @@ void RaspbotBaseNode::control_loop() {
   const Cmd3 c = clamp_velocity(cmd.linear.x, cmd.linear.y, cmd.angular.z,
                                 max_linear_, max_angular_);
   const auto pwms = wheel_pwm(c.vx, c.vy, k_geom_ * c.wz, pwm_per_mps_,
-                              max_pwm_, deadband_, wheel_signs_);
+                              max_pwm_, deadband_, wheel_signs_, wheel_trim_);
 
   // FR-A-06: re-send the four wheel PWMs at least every cmd_resend_interval
   // even when the command did not change (the expansion board forgets its

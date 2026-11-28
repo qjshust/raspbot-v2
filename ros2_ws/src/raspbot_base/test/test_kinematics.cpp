@@ -59,21 +59,23 @@ TEST(SwU01, StrafeRight) {
 
 TEST(SwU01, RotateLeftCcw) {
   const double k = kK * 0.5;
+  // 厂商 rotate_left 轮向组合：FL-, RL-, FR+, RR+（左右侧同向，非对角）
   expect_ws_close(wheel_linear_velocities(0.0, 0.0, 0.5, kK),
-                  {-k, k, -k, k});
+                  {-k, -k, k, k});
 }
 
 TEST(SwU01, RotateRightCw) {
   const double k = kK * 0.5;
   expect_ws_close(wheel_linear_velocities(0.0, 0.0, -0.5, kK),
-                  {k, -k, k, -k});
+                  {k, k, -k, -k});
 }
 
 TEST(SwU01, MixedCommandMatchesFormula) {
   const double vx = 0.1, vy = 0.05, wz = 0.2;
   const double k = kK * wz;
+  // 正确式：L1=vx-vy-k, L2=vx+vy-k, R1=vx+vy+k, R2=vx-vy+k
   expect_ws_close(wheel_linear_velocities(vx, vy, wz, kK),
-                  {vx - vy - k, vx + vy + k, vx + vy - k, vx - vy + k});
+                  {vx - vy - k, vx + vy - k, vx + vy + k, vx - vy + k});
 }
 
 // ------------------------------------------------------------- SW-U02
@@ -84,7 +86,7 @@ TEST(SwU02, PeakScaledToMaxPwm) {
 }
 
 TEST(SwU02, ProportionalScalingWithin1Lsb) {
-  // effective wz already includes k_geom: raw = (0.2, 0.8, 0.8, 0.2)
+  // effective wz already includes k_geom: raw = (0.2, 0.2, 0.8, 0.8)
   const double vx = 0.5, vy = 0.0, wz = 0.3;
   const WheelSpeeds raw = wheel_linear_velocities(vx, vy, wz, 1.0);
   const double peak = std::max({std::fabs(raw.l1), std::fabs(raw.l2),
@@ -156,6 +158,20 @@ TEST(SwU04, SignAppliedBeforeDeadband) {
   // -0.01 m/s -> pwm -1 -> sign -1 -> +1 -> deadband +25, not -25
   const auto out = wheel_pwm(-0.01, 0.0, 0.0, 100.0, 255, 25, {-1, 1, 1, 1});
   expect_pwm(out, 25, -25, -25, -25);
+}
+
+TEST(SwU04, WheelTrimScalesIndividualPwm) {
+  // 前向 0.2 m/s × 100 = 20 PWM；trim 0.5 使该轮减半（10 → 死区 1 不触发）
+  const auto out = wheel_pwm(0.2, 0.0, 0.0, 100.0, 255, 1,
+                             {1, 1, 1, 1}, {0.5, 1.0, 1.0, 1.0});
+  expect_pwm(out, 10, 20, 20, 20);
+}
+
+TEST(SwU04, WheelTrimDefaultIsNoOp) {
+  const auto base = wheel_pwm(0.2, 0.1, 0.3, 100.0, 255, 25);
+  const auto with_unit_trim = wheel_pwm(0.2, 0.1, 0.3, 100.0, 255, 25,
+                                        {1, 1, 1, 1}, {1.0, 1.0, 1.0, 1.0});
+  expect_pwm(with_unit_trim, base[0], base[1], base[2], base[3]);
 }
 
 // -------------------------------------------------------- clamp_velocity

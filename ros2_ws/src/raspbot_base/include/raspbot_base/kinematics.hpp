@@ -36,10 +36,11 @@ struct MotorCmd {
 
 /// Mecanum inverse kinematics -> per-wheel linear velocities (m/s).
 ///
-/// Formula identical to the legacy Python implementation:
+/// Correct formula (matches the vendor library rotate_left pattern
+/// FL-, RL-, FR+, RR+ for positive wz):
 ///   L1 = vx - vy - k*wz
-///   L2 = vx + vy + k*wz
-///   R1 = vx + vy - k*wz
+///   L2 = vx + vy - k*wz
+///   R1 = vx + vy + k*wz
 ///   R2 = vx - vy + k*wz
 WheelSpeeds wheel_linear_velocities(double vx, double vy, double wz,
                                     double k_geom);
@@ -54,7 +55,9 @@ double round_half_even(double value);
 /// ``wz`` is the *effective* rotation term, i.e. the angular velocity already
 /// multiplied by k_geom (see wheel_linear_velocities). Pipeline order is
 /// preserved from the legacy Python code:
-///   1. multiply each wheel linear velocity by pwm_per_mps;
+///   1. multiply each wheel linear velocity by ``pwm_per_mps``;
+///   1b. multiply by the per-wheel ``wheel_trim`` factor (individual motor
+///      speed compensation; <1 slows that wheel down, >1 speeds it up);
 ///   2. if the absolute peak exceeds max_pwm, scale all four so the peak
 ///      equals max_pwm (proportional saturation);
 ///   3. round each value (banker's rounding, as Python int(round(v))) and
@@ -64,7 +67,9 @@ double round_half_even(double value);
 std::array<int, 4> wheel_pwm(double vx, double vy, double wz,
                              double pwm_per_mps, int max_pwm = 255,
                              int deadband = 25,
-                             std::array<int, 4> wheel_signs = {1, 1, 1, 1});
+                             std::array<int, 4> wheel_signs = {1, 1, 1, 1},
+                             std::array<double, 4> wheel_trim = {1.0, 1.0,
+                                                                 1.0, 1.0});
 
 /// Clamp a (vx, vy, wz) command to the configured limits.
 Cmd3 clamp_velocity(double vx, double vy, double wz, double max_linear,

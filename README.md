@@ -239,6 +239,11 @@ bash .dsh/selftest/09_perf.sh
 
 ## 已知限制与坑
 
+- **麦轮逆解 wz 符号（已修复）**：旧实现 `L2 = vx+vy+k·wz, R1 = vx+vy−k·wz` 与厂商库 `rotate_left`（FL−, RL−, FR+, RR+）不符，导致旋转速率不可预测；正确式为 `L2 = vx+vy−k·wz, R1 = vx+vy+k·wz`。
+- **pwm_per_mps 必须标定**：占位 700 会让实际车速约为指令的 5~6 倍（30 cm 指令跑 1.5~2 m）；落地实测反推 ≈ **120**（10 cm 指令实测 10 cm）。标定前请把手放在急停处。
+- **死区决定最低速度**：`deadband_pwm=25` → 平移最低有效速度 = 25/120 ≈ **0.208 m/s**，旋转最低 = 0.208/`k_geom` ≈ **1.67 rad/s（96°/s）**；低于该值的指令会被抬到最低速度，测试时长要按"有效速度"计算。
+- **瓷砖打滑**：麦轮横向滚子在瓷砖上打滑，30 cm 直行/15 cm 横移会带来数度~数十度偏航（实测均值 −23°/σ10°）；这是环境限制，长距离精确直线需高摩擦地面或闭环校正。
+- **IMU 偏航在地面运动时受振动污染**：悬空时 std≈0.0003 rad/s，落地后轮系振动可达 0.2~0.7 rad/s，快速旋转时 IMU 积分角会明显偏大（实测 90° 读成 160°）；精确转角以雷达/目视为准。
 - **Lyrical 的 ament_cmake 没有 `ament_target_dependencies`**（宏已移除，`ament_cmake_target_dependencies` 包只提供递归属性）：链接 rclcpp 用 `rclcpp::rclcpp`，消息包用 `pkg::pkg__rosidl_generator_cpp`（头文件）+ `pkg::pkg__rosidl_typesupport_cpp`（类型支持符号，否则链接期 undefined reference）。
 - **gtest 1.17 参数化测试名**只允许字母数字下划线：`-1.5` 之类的参数名要写成 `neg1_5`。
 - **std::normal_distribution 的 stddev 必须 > 0**（含成员默认初始化 `{0.0, 0.0}` 会在构造时断言崩溃），噪声参数为 0 时用 `std::max(x, 1e-12)`。

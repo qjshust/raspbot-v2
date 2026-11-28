@@ -65,6 +65,7 @@ class RaspbotBaseNode : public rclcpp::Node {
   int max_pwm_ = 255;
   int deadband_ = 25;
   std::array<int, 4> wheel_signs_ = {1, 1, 1, 1};
+  std::array<double, 4> wheel_trim_ = {1.0, 1.0, 1.0, 1.0};
   double control_rate_ = 30.0;
   double sensor_rate_ = 5.0;
   double cmd_timeout_ = 0.5;

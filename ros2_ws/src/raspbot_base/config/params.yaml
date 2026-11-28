@@ -1,16 +1,24 @@
 raspbot_base:
   ros__parameters:
     # velocity limits (m/s, rad/s)
-    max_linear: 0.30
-    max_angular: 1.50
-    # mecanum geometry factor, metres. calibrate: command 0.5 rad/s for 4 s
+    # 落地实测标定前先压到安全值：命令 0.08 m/s 实际跑了 ~0.45 m/s（约 5.6 倍），
+    # 因此 pwm_per_mps 由占位 700 修正为 120（待卷尺精标 CAR-C01）；先把上限降到 0.15
+    max_linear: 0.15
+    max_angular: 0.80
+    # mecanum geometry factor, metres（厂商公式 (117+132)/2 mm = 124.5 mm）
     k_geom: 0.1245
-    # PWM per m/s; calibrate on blocks
-    pwm_per_mps: 700.0
+    # PWM per m/s；占位 700 导致实测超速 5~6 倍，按"30cm 指令 → 实际 1.5~2m"反推 ≈120
+    pwm_per_mps: 120.0
     max_pwm: 255
     deadband_pwm: 25
     # per-wheel sign, order L1 L2 R1 R2
     wheel_signs: [1, 1, 1, 1]
+    # 每轮速度微调（个体电机/轮径差异补偿）。
+    # 瓷砖实测：30cm 直行偏航 -15.7/-16.8/-37.7°（均值 -23°，σ 10°）；
+    # 按 -16° 系统分量试补偿 [0.94,0.94,1.06,1.06] 后均值仅 -21.9°（无显著改善）
+    # → 瓷砖上的偏航由打滑主导而非轮速差，故恢复 1.0；
+    # 若换高摩擦地面（地毯/橡胶垫）再按直行漂移重新标定此项。
+    wheel_trim: [1.0, 1.0, 1.0, 1.0]
     control_rate: 30.0
     sensor_rate: 5.0
     cmd_timeout: 0.5

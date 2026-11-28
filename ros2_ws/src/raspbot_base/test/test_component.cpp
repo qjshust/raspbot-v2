@@ -64,14 +64,14 @@ TEST(SwG06, ReverseCmdDrivesExpectedPwm) {
 }
 
 TEST(SwG06, MixedCmdPipeline) {
-  // vx=0.1, vy=0.05, wz=0.2 -> raw (0.0251, 0.1749, 0.1251, 0.0749) m/s
-  // -> x700 = (17.57, 122.43, 87.57, 52.43) -> round -> deadband -> (25,122,88,52)
+  // vx=0.1, vy=0.05, wz=0.2（k_geom 折算 k=0.0249）
+  // 正确式：l1=0.0251→18→25(死区), l2=0.1251→88, r1=0.1749→122, r2=0.0749→52
   const Cmd3 c = clamp_velocity(0.1, 0.05, 0.2, 0.30, 1.50);
   EXPECT_DOUBLE_EQ(c.vx, 0.1);
   EXPECT_DOUBLE_EQ(c.vy, 0.05);
   EXPECT_DOUBLE_EQ(c.wz, 0.2);
   const auto pwms = wheel_pwm(c.vx, c.vy, kK * c.wz, 700.0, 255, 25);
-  expect_pwm(pwms, 25, 122, 88, 52);
+  expect_pwm(pwms, 25, 88, 122, 52);
 }
 
 // ------------------------------------------------------------- SW-G07
